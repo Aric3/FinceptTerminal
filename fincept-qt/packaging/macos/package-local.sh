@@ -9,6 +9,14 @@ build_dir="$(cd "$1" && pwd)"
 qt_prefix="$(cd "$2" && pwd)"
 destination="$3"
 source_app="$build_dir/FinceptTerminal.app"
+if [ "$("$qt_prefix/bin/qmake" -query QT_VERSION)" = "6.8.3" ] && [ -z "${FINCEPT_COCOA_PLUGIN:-}" ]; then
+    echo "Qt 6.8.3 requires the Cocoa accessibility fix. Build packaging/macos/cocoa/build-cocoa-patch.sh and set FINCEPT_COCOA_PLUGIN." >&2
+    exit 1
+fi
+if [ -n "${FINCEPT_COCOA_PLUGIN:-}" ] && [ ! -f "$FINCEPT_COCOA_PLUGIN" ]; then
+    echo "Cocoa plugin does not exist: $FINCEPT_COCOA_PLUGIN" >&2
+    exit 1
+fi
 identifier=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$source_app/Contents/Info.plist")
 if [ "$identifier" != "dev.aric.fincept.local" ]; then
     echo "Expected a local edition build; refusing to package an official build." >&2
@@ -24,6 +32,21 @@ trap 'rm -rf "$package_dir"' EXIT
 /usr/bin/ditto "$source_app" "$package_dir"
 "$qt_prefix/bin/macdeployqt" "$package_dir" -no-strip -always-overwrite \
     -libpath="$build_dir/_deps/qgeoview-build/lib"
+# Optional isolated Qt 6.8.3 accessibility ownership fix. Replace AFTER
+# macdeployqt so its -always-overwrite cannot put the original plugin back.
+if [ -n "${FINCEPT_COCOA_PLUGIN:-}" ]; then
+    cp "$FINCEPT_COCOA_PLUGIN" "$package_dir/Contents/PlugIns/platforms/libqcocoa.dylib"
+    # Remove SDK build rpaths: the packaged plugin must use bundled frameworks.
+    while IFS= read -r rpath; do
+        case "$rpath" in
+            /*) /usr/bin/install_name_tool -delete_rpath "$rpath" "$package_dir/Contents/PlugIns/platforms/libqcocoa.dylib" ;;
+        esac
+    done < <(/usr/bin/otool -l "$package_dir/Contents/PlugIns/platforms/libqcocoa.dylib" | \
+        awk '/cmd LC_RPATH/ { found=1; next } found && $1 == "path" { print $2; found=0 }')
+    mkdir -p "$package_dir/Contents/Resources/qt-cocoa-fix"
+    cp "$(dirname "$0")/cocoa/retain-table-cells.patch" "$(dirname "$0")/cocoa/SOURCE-NOTICE.txt" "$package_dir/Contents/Resources/qt-cocoa-fix/"
+    cp -R "$(dirname "$0")/cocoa/LICENSES" "$package_dir/Contents/Resources/qt-cocoa-fix/"
+fi
 # Only SQLite is required. Other SQL drivers can depend on absent external libs.
 rm -f "$package_dir/Contents/PlugIns/sqldrivers/libqsqlodbc.dylib" \
       "$package_dir/Contents/PlugIns/sqldrivers/libqsqlpsql.dylib" \

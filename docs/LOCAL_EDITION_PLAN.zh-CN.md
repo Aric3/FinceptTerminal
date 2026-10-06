@@ -147,3 +147,25 @@ Keychain 拒绝访问、缺失密钥、旧包装损坏、SQL 写入失败均保�
 本轮交付：更新后的原生应用已安装至 `~/Applications/Fincept Local.app`，签名校验通过。全套 8/8 测试通过，其中真实 Keychain 集成测试为显式启用项，默认关闭；它只访问临时数据库与自身新建的假条目，包含重新加载、解密、拒绝覆盖及缺失密钥拒绝访问，测试条目已删除。用户既有工作区未自动启动；真实凭据将于下次正常打开应用时按上述事务流程迁移。
 
 可重复验证：开发环境执行 `dev configure -DFINCEPT_BUILD_TESTS=ON`、`dev build`，再用 SDK 中的 `ctest --test-dir <build> --output-on-failure`。只有主动测试真实 Keychain 时才增加 `-DFINCEPT_TEST_REAL_KEYCHAIN=ON`；完成后恢复 OFF，日常测试不操作系统 Keychain。原生包启动的 profile 测试因会改写真实 `profiles.json` 未执行，采用真实 Keychain + 纯临时 SQLite 的集成测试替代。
+
+
+### 2026-10-06：持续加载与 macOS 辅助功能崩溃修复
+
+- DataHub 取消尚未派发的合并请求时同步清除 `in_flight`；页面迅速隐藏、重新订阅不会再被取消请求留下的标记挡住。已派发请求保留去重标记。
+- 请求超时通过 `publish_error()` 通知直接和通配符错误订阅者，面板结束加载并显示错误。超时当次调度不启动替代请求，避免错误通知清除新请求标记。
+- 本地模式也注册宏观日历的精确生产者；官方服务被禁用时立即显示不可用提示，不再落入通用经济数据生产者后一直等待。
+- 实际 Command-Q 复现了 `QAccessibleCache::removeAccessibleElement` 崩溃。Qt 6.8.3 Cocoa 表格占位单元格提升后，行数组和缓存共享一个所有权引用，缓存失效会释放数组仍引用的对象。只在提升时增加缓存所有权引用，不关闭辅助功能，也不改系统 Qt。
+- `fincept-qt/packaging/macos/cocoa` 提供固定版本、SHA256 校验的官方源码构建脚本、最小补丁及独立复现程序。原版测试退出 SIGSEGV；修补版及打包后的插件均完成 20 次 8×5 表格读取、清空、销毁循环并退出 0。应用测试 8/8 通过。
+- Qt 6.8.3 原生打包要求 `FINCEPT_COCOA_PLUGIN`，在 macdeployqt 后复制修补插件并移除 SDK 绝对 rpath，避免重新打包丢失修复。包内保留补丁、源码地址及原始许可证。
+
+复现构建（在隔离 SDK 的 bash 环境中）：
+
+```bash
+source /Users/ac/workspace/projects/FinceptTerminal-dev/env.sh
+/Users/ac/workspace/projects/FinceptTerminal/fincept-qt/packaging/macos/cocoa/build-cocoa-patch.sh "$QT_DIR" "$FINCEPT_DEV_ROOT/packages/cocoa-build"
+FINCEPT_COCOA_PLUGIN="$FINCEPT_DEV_ROOT/packages/cocoa-build/plugins/platforms/libqcocoa.dylib" \
+  /Users/ac/workspace/projects/FinceptTerminal/fincept-qt/packaging/macos/package-local.sh \
+  "$FINCEPT_DEV_ROOT/build" "$QT_DIR" /private/tmp/FinceptLocal-new.app
+```
+
+本机最终验证：已安装到 `/Users/ac/Applications/Fincept Local.app`。实际行情页 9 个面板均有数据，切换页面后正常显示；第二次启动后读取到 270 个单元格、无 `LOADING`。两次 Command-Q 均无新崩溃报告，第二次受控进程退出码 0。原生应用已重新打开。少量 Yahoo 无行情的代码（如 `LBS=F`、`UNI-USD`）仍会返回上游数据错误，不代表整个应用离线。

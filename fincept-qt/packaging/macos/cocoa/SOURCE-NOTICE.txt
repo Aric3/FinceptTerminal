@@ -1,0 +1,7 @@
+This bundle uses a locally patched Qt 6.8.3 Cocoa platform plugin.
+Qt source: https://github.com/qt/qtbase/tree/v6.8.3/src/plugins/platforms/cocoa
+Verified source archive: https://codeload.github.com/qt/qtbase/tar.gz/refs/tags/v6.8.3
+SHA256: cea5c8f2c20d9cbd684f8a402721e63b87a2886e906f6ec7e0f7e1ff69c83206
+The accompanying patch adds a cache-owned reference to promoted table cells.
+Original Qt copyright and license notices remain in the source archive.
+Build scripts and regression test: fincept-qt/packaging/macos/cocoa in this fork.

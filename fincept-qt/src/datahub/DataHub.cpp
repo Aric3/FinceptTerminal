@@ -254,7 +254,15 @@ void DataHub::on_owner_destroyed(QObject* owner) {
                 idle_set.insert(t);
             for (auto it = coalesce_pending_.begin(); it != coalesce_pending_.end();) {
                 it.value().erase(std::remove_if(it.value().begin(), it.value().end(),
-                                                [&idle_set](const QString& t) { return idle_set.contains(t); }),
+                                                [&](const QString& t) {
+                                                    if (!idle_set.contains(t))
+                                                        return false;
+                                                    // This request has not reached a producer. A later
+                                                    // subscription must be able to enqueue it again.
+                                                    if (auto st = topics_.find(t); st != topics_.end())
+                                                        st->in_flight = false;
+                                                    return true;
+                                                }),
                                  it.value().end());
                 if (it.value().isEmpty())
                     it = coalesce_pending_.erase(it);
@@ -438,7 +446,10 @@ void DataHub::unsubscribe(QObject* owner, const QString& topic) {
             // drop it now — there's no point dispatching a producer call for
             // a topic that has no subscribers left.
             for (auto it = coalesce_pending_.begin(); it != coalesce_pending_.end();) {
-                it.value().removeAll(topic);
+                if (it.value().removeAll(topic) > 0) {
+                    if (auto st = topics_.find(topic); st != topics_.end())
+                        st->in_flight = false;
+                }
                 if (it.value().isEmpty())
                     it = coalesce_pending_.erase(it);
                 else
@@ -1042,7 +1053,9 @@ void DataHub::scheduler_body() {
             auto& st = state_for(topic);
             if (st.policy.push_only)
                 continue;
-            if (st.in_flight)
+            // Notify timeout consumers before starting a replacement request.
+            // Otherwise publishing the error would clear the new request's gate.
+            if (st.in_flight || timed_out_topics.contains(topic))
                 continue;
 
             const bool have_value = st.value.isValid() && st.last_publish_ms > 0;
@@ -1088,7 +1101,7 @@ void DataHub::scheduler_body() {
                                     "The producer failed to publish() or publish_error() within "
                                     "refresh_timeout_ms; hub will retry on the next scheduler pass.")
                                 .arg(topic));
-        emit topic_error(topic, QStringLiteral("refresh_timeout"));
+        publish_error(topic, QStringLiteral("Data request timed out; retry to load again."));
     }
 
     for (auto it = work.begin(); it != work.end(); ++it) {

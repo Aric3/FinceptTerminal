@@ -168,3 +168,9 @@ if(APPLE AND FINCEPT_TEST_REAL_KEYCHAIN)
     target_link_libraries(tst_mac_keychain PRIVATE Qt6::Sql OpenSSL::Crypto
         "-framework Security" "-framework CoreFoundation")
 endif()
+
+fincept_add_test(tst_datahub_refresh
+    tst_datahub_refresh.cpp
+    ../src/datahub/DataHub.cpp
+    ../src/core/logging/Logger.cpp)
+target_link_libraries(tst_datahub_refresh PRIVATE Qt6::Widgets)

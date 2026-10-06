@@ -1,0 +1,13 @@
+--- a/src/plugins/platforms/cocoa/qcocoaaccessibilityelement.mm
++++ b/src/plugins/platforms/cocoa/qcocoaaccessibilityelement.mm
+@@ -365,6 +365,10 @@
+             }
+         }
+ 
++        // Qt 6.8.3's cache takes ownership without retaining. The row array
++        // already owns this promoted placeholder, so give the cache its own
++        // reference; invalidate() releases it independently of the row.
++        [self retain];
+         cache->insertElement(axid, self);
+     }
+     return iface;

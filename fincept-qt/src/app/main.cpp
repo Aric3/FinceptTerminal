@@ -412,7 +412,6 @@ int main(int argc, char* argv[]) {
     // perceived latency drops without changing functional behavior.
     fincept::services::NewsService::instance().ensure_registered_with_hub();
     fincept::services::EconomicsService::instance().ensure_registered_with_hub();
-    if (!fincept::edition::is_local())
     fincept::services::MacroCalendarService::instance().ensure_registered_with_hub();
     fincept::trading::DataStreamManager::instance().ensure_registered_with_hub();
     if (!fincept::edition::is_local())

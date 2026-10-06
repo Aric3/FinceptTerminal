@@ -1034,7 +1034,7 @@ void NewsScreen::update_ui_from_filtered(int /*generation*/, const QVector<servi
     // and the filter genuinely produced nothing. Hide it as soon as the user
     // has any rows to look at.
     if (!loading_)
-        feed_panel_->set_empty_state(filtered.isEmpty());
+        feed_panel_->set_empty_state(filtered.isEmpty(), !all_articles_.isEmpty());
     else if (!filtered.isEmpty())
         feed_panel_->set_empty_state(false);
 

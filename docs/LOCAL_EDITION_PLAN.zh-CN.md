@@ -240,3 +240,35 @@ Python `yfinance_data.py` 有 quote/search/historical 等 JSON 命令，但直�
 绝对路径 `/Users/ac/Documents/Codex/2026-10-05/https-github-com-fincept-corporation-finceptterminal/acceptance/spy-vectorbt-20261006.json`。
 本轮仅读取行情/执行回测及写验收输出，没有添加持仓、连接账户或执行订单；
 组合CRUD/导入导出仍待临时数据库隔离验收。应用程序未重新安装；本轮更新验收记录。
+
+
+### 组合与自选隔离验收、界面修复（2026-10-06）
+
+新增 `tst_portfolio_storage`，直接链接真实 PortfolioRepository、WatchlistRepository、SettingsRepository、
+SyncOutbox/CloudSyncSettings、Database，以及实体所需的真实 v001/v006/v019/v022 迁移。
+每个测试使用独立 QTemporaryDir SQLite文件；明确关闭同步；没有启动应用、联网、操作Keychain或真实持仓。
+这是仓储和相关迁移集成测试，不是全应用迁移或业务服务端到端测试。
+
+已验收：
+- 10股@100再加5股@160得到15股、加权成本120；归一大小写，保留原行业及券商代码/交易所/首购日。
+- 改名后关闭并重新打开同一数据库，组合名称、券商关联和资产成本均持久化。
+- 交易更新到3股@120时总金额为360；数据库拒绝非法交易类型。
+- 同一日快照替换，不产生重复；删除组合后资产、交易、快照均清理，拒绝孤立资产。
+- 自选重复代码只保留一条，改名/关闭重读正常；删除自选清理代码，拒绝孤立代码。
+
+完整应用编译成功，CTest **10/10**通过；格式及diff检查通过。
+基本计算验证覆盖加权成本和交易金额，市值/盈亏、JSON导入导出与失败事务回滚仍需补充。
+
+已修复源码：
+- 新闻有原始文章但筛选为空时，显示“没有匹配的文章/清空搜索或调整筛选条件”，不误报断网。
+  保留无原始文章时的连接提示；语言切换保持空状态原因，新增简体/繁体翻译。
+- 回测JSON导出默认使用 QStandardPaths DocumentsLocation，空值回退用户主目录，避免默认根目录。
+
+更新前另观察到 ^GSPC 研究页部分请求报 curl TLS connect error，而报价及仪表盘行情有数值。
+未将该局部错误当作已修复，也未据此判定全局断网；后续须单独诊断与验证重试恢复。
+
+安装状态：已打包并签名验证，安装到 `/Users/ac/Applications/Fincept Local.app`，保留旧应用
+`FinceptTerminal-dev/backups/FinceptLocal-before-acceptance.bundle-backup`（非应用后缀，避免标识冲突）。
+新进程已启动；原生界面自动化超时后，系统清单明确报告Mac锁屏。
+已请求用户解锁，新闻新提示与Documents默认目录的最终界面验收尚未完成；
+不将编译/签名/测试通过替代这两项界面验收。

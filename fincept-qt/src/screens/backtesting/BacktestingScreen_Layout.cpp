@@ -14,6 +14,7 @@
 #include "services/file_manager/FileManagerService.h"
 #include "ui/theme/Theme.h"
 
+#include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QGridLayout>
@@ -23,6 +24,7 @@
 #include <QMessageBox>
 #include <QScrollArea>
 #include <QSplitter>
+#include <QStandardPaths>
 
 namespace fincept::screens {
 
@@ -246,7 +248,10 @@ QWidget* BacktestingScreen::build_center_panel() {
         if (text.trimmed().isEmpty())
             return;
 
-        QString path = QFileDialog::getSaveFileName(this, tr("Export Backtest Results"), "backtest_results.json",
+        const QString export_dir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+        const QString default_path =
+            QDir(export_dir.isEmpty() ? QDir::homePath() : export_dir).filePath("backtest_results.json");
+        QString path = QFileDialog::getSaveFileName(this, tr("Export Backtest Results"), default_path,
                                                     tr("JSON Files (*.json);;All Files (*)"));
         if (path.isEmpty())
             return;

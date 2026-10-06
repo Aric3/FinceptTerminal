@@ -259,7 +259,9 @@ void NewsFeedPanel::set_loading(bool loading) {
     }
 }
 
-void NewsFeedPanel::set_empty_state(bool empty) {
+void NewsFeedPanel::set_empty_state(bool empty, bool filtered_out) {
+    filtered_out_ = filtered_out;
+    retranslateUi();
     if (is_loading_)
         return; // skeleton wins until loading completes
     if (empty) {
@@ -414,9 +416,10 @@ void NewsFeedPanel::changeEvent(QEvent* event) {
 
 void NewsFeedPanel::retranslateUi() {
     if (empty_state_title_)
-        empty_state_title_->setText(tr("No articles available"));
+        empty_state_title_->setText(filtered_out_ ? tr("No matching articles") : tr("No articles available"));
     if (empty_state_hint_)
-        empty_state_hint_->setText(tr("Check your network connection and click Refresh to retry."));
+        empty_state_hint_->setText(filtered_out_ ? tr("Clear the search or adjust the filters to see more articles.")
+                                                 : tr("Check your network connection and click Refresh to retry."));
     // banner_tag_ reflects the live FLASH/BREAKING priority of the current
     // banner and refreshes on the next show_breaking() — not forced here.
 }

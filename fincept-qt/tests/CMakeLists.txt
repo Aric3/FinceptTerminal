@@ -182,3 +182,21 @@ fincept_add_test(tst_feed_parsing
     ../src/services/feeds/FeedSelfTest.cpp
     ../src/services/feeds/FeedScraper.cpp
     ../src/services/feeds/FeedParseUtil.cpp)
+
+# Repository integration against temporary SQLite files. Link only the real
+# migrations needed by these entities, not the entire application schema.
+fincept_add_test(tst_portfolio_storage
+    tst_portfolio_storage.cpp
+    ../src/storage/repositories/PortfolioRepository.cpp
+    ../src/storage/repositories/WatchlistRepository.cpp
+    ../src/storage/repositories/SettingsRepository.cpp
+    ../src/storage/sync/SyncOutbox.cpp
+    ../src/storage/sync/CloudSyncSettings.cpp
+    ../src/storage/sqlite/Database.cpp
+    ../src/storage/sqlite/migrations/MigrationRunner.cpp
+    ../src/storage/sqlite/migrations/v001_initial.cpp
+    ../src/storage/sqlite/migrations/v006_portfolio_multi.cpp
+    ../src/storage/sqlite/migrations/v019_sector_cache.cpp
+    ../src/storage/sqlite/migrations/v022_portfolio_broker_link.cpp
+    ../src/core/logging/Logger.cpp)
+target_link_libraries(tst_portfolio_storage PRIVATE Qt6::Sql)

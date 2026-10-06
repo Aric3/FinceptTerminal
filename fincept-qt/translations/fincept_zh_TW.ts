@@ -17976,6 +17976,14 @@ Click '+ Add' to add one.</source>
 <context>
     <name>fincept::screens::NewsFeedPanel</name>
     <message>
+        <source>No matching articles</source>
+        <translation>沒有符合條件的文章</translation>
+    </message>
+    <message>
+        <source>Clear the search or adjust the filters to see more articles.</source>
+        <translation>清除搜尋或調整篩選條件以查看更多文章。</translation>
+    </message>
+    <message>
         <source>No articles available</source>
         <translation>暫無文章</translation>
     </message>

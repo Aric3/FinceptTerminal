@@ -911,13 +911,8 @@ ImportPortfolioDialog::ImportPortfolioDialog(const QVector<portfolio::Portfolio>
             {"UNH", 4, 525.60, "Healthcare"},
             {"PG", 12, 158.90, "Consumer Staples"},
         };
-        // The template MUST be the terminal's own export format - 'portfolio_name' plus
-        // a 'transactions' array - because that is all PortfolioService::import_json()
-        // accepts. This used to write a holdings-only file ('name' + 'holdings'), which
-        // the importer rejects outright ("Holdings-only snapshots are not supported"),
-        // so the template offered right here could never be imported. Each holding
-        // becomes a BUY a year ago (which also gives the charts a year of history to
-        // backfill); the per-transaction 'sector' is honoured by the importer.
+        // Keep the downloadable template in the supported legacy transaction
+        // format. Version 2 exports also preserve current holdings independently.
         const QString buy_date = QDate::currentDate().addYears(-1).toString("yyyy-MM-dd");
         for (const auto& h : demo) {
             QJsonObject o;
@@ -961,7 +956,8 @@ ImportPortfolioDialog::ImportPortfolioDialog(const QVector<portfolio::Portfolio>
     new_radio_->setChecked(true);
     layout->addWidget(new_radio_);
 
-    merge_radio_ = new QRadioButton(tr("Merge transactions into existing portfolio:"));
+    merge_radio_ = new QRadioButton(tr("Add holdings and history to existing portfolio:"));
+    merge_radio_->setToolTip(tr("Adds quantities and appends history. Importing the same file again adds it again."));
     layout->addWidget(merge_radio_);
 
     target_cb_ = new QComboBox;
@@ -1050,8 +1046,11 @@ void ImportPortfolioDialog::retranslateUi() {
         mode_label_->setText(tr("IMPORT MODE"));
     if (new_radio_)
         new_radio_->setText(tr("Create new portfolio from file"));
-    if (merge_radio_)
-        merge_radio_->setText(tr("Merge transactions into existing portfolio:"));
+    if (merge_radio_) {
+        merge_radio_->setText(tr("Add holdings and history to existing portfolio:"));
+        merge_radio_->setToolTip(
+            tr("Adds quantities and appends history. Importing the same file again adds it again."));
+    }
     if (cancel_btn_)
         cancel_btn_->setText(tr("CANCEL"));
     if (import_btn_)

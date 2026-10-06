@@ -9,6 +9,7 @@
 #include "core/logging/Logger.h"
 #include "python/PythonRunner.h"
 #include "services/portfolio/PortfolioService.h"
+#include "services/portfolio/PortfolioValuation.h"
 #include "services/sectors/SectorResolver.h"
 #include "storage/repositories/CustomIndexRepository.h"
 #include "storage/repositories/PortfolioRepository.h"
@@ -233,83 +234,22 @@ bool PortfolioService::try_broker_quotes(const QString& portfolio_id, const QVec
 void PortfolioService::finalize_summary(const QString& portfolio_id, const QVector<portfolio::PortfolioAsset>& assets,
                                         const portfolio::Portfolio& portfolio,
                                         const QHash<QString, QuoteData>& quote_map) {
-    portfolio::PortfolioSummary summary;
-    summary.portfolio = portfolio;
-    summary.holdings.reserve(assets.size());
+    auto enriched_assets = assets;
+    for (auto& asset : enriched_assets)
+        if (asset.sector.isEmpty())
+            asset.sector = SectorResolver::instance().sector_for(asset.symbol);
+    QHash<QString, portfolio::PriceMark> prices;
+    for (auto it = quote_map.cbegin(); it != quote_map.cend(); ++it)
+        prices.insert(it.key(), {it->price, it->change, it->change_pct});
+    auto summary = portfolio::value_portfolio(portfolio, enriched_assets, prices);
 
-    double total_mv = 0;
-    double total_cost = 0;
-    double total_day = 0;
-    double total_prev = 0; // previous-close value of PRICED holdings only (day% base)
-    int priced_count = 0;  // holdings that actually received a quote
-
-    for (const auto& asset : assets) {
-        portfolio::HoldingWithQuote h;
-        h.symbol = asset.symbol;
-        h.quantity = asset.quantity;
-        h.avg_buy_price = asset.avg_buy_price;
-        h.cost_basis = asset.quantity * asset.avg_buy_price;
-        // Prefer stored sector; fall back to resolver cache (which may
-        // populate async — see sector_resolved handler in constructor).
-        h.sector = asset.sector.isEmpty() ? SectorResolver::instance().sector_for(asset.symbol) : asset.sector;
-
-        auto it = quote_map.find(asset.symbol);
-        if (it != quote_map.end()) {
-            h.current_price = it->price;
-            h.day_change = it->change;
-            h.day_change_percent = it->change_pct;
-            total_prev += (h.current_price - h.day_change) * h.quantity; // priced holdings only
-            ++priced_count;
-        } else {
-            // Fallback to avg buy price if no quote (broker missed the symbol,
-            // or yfinance returned nothing).
-            h.current_price = asset.avg_buy_price;
-        }
-
-        h.market_value = h.quantity * h.current_price;
-        h.unrealized_pnl = h.market_value - h.cost_basis;
-        h.unrealized_pnl_percent = (h.cost_basis > 0) ? (h.unrealized_pnl / h.cost_basis) * 100.0 : 0;
-
-        total_mv += h.market_value;
-        total_cost += h.cost_basis;
-        total_day += h.day_change * h.quantity;
-
-        if (h.unrealized_pnl >= 0)
-            summary.gainers++;
-        else
-            summary.losers++;
-
-        summary.holdings.append(h);
-    }
-
-    // Compute weights
-    for (auto& h : summary.holdings) {
-        h.weight = (total_mv > 0) ? (h.market_value / total_mv) * 100.0 : 0;
-    }
-
-    summary.total_market_value = total_mv;
-    summary.total_cost_basis = total_cost;
-    summary.total_unrealized_pnl = total_mv - total_cost;
-    summary.total_unrealized_pnl_percent = (total_cost > 0) ? ((total_mv - total_cost) / total_cost) * 100.0 : 0;
-    summary.total_day_change = total_day;
-    // Percent off the previous-close base of PRICED holdings only. Using
-    // (total_mv − total_day) folded unpriced holdings' full stale value into the
-    // denominator, diluting the day % whenever any symbol failed to quote.
-    summary.total_day_change_percent = (total_prev > 0) ? (total_day / total_prev) * 100.0 : 0;
-    summary.total_positions = assets.size();
-    summary.last_updated = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
-
-    // A refresh where NO holding got a quote (network down, provider outage)
-    // values every position at its cost basis. That is fine to display, but it
-    // must not be persisted: save_snapshot() is INSERT OR REPLACE keyed by day,
-    // so it would overwrite today's real NAV with a flat cost-basis value and
-    // feed a fake drop/zero-return into every vol/Sharpe/drawdown figure. Nor
-    // should it sit in the 5-minute summary cache and be served as if fresh.
-    if (!assets.isEmpty() && priced_count == 0) {
-        LOG_WARN("PortfolioSvc",
-                 QString("No quotes returned for %1 (%2 holdings) — showing cost basis, not caching or snapshotting")
-                     .arg(portfolio_id)
-                     .arg(assets.size()));
+    // Partial quotes mix market values with cost basis. Never replace a valid
+    // daily NAV or custom-index observation with that provisional valuation.
+    if (!portfolio::has_complete_prices(summary)) {
+        LOG_WARN("PortfolioSvc", QString("Quotes available for %1/%2 holdings in %3; skipping cache and snapshot")
+                                     .arg(summary.priced_positions)
+                                     .arg(summary.total_positions)
+                                     .arg(portfolio_id));
         emit summary_loaded(summary);
         return;
     }

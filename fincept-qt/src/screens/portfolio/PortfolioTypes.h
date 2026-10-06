@@ -73,6 +73,7 @@ struct HoldingWithQuote {
     double day_change = 0;
     double day_change_percent = 0;
     double weight = 0; // % of total portfolio
+    bool has_quote = false; // false: displayed valuation uses cost basis
 };
 
 struct PortfolioSummary {
@@ -89,6 +90,7 @@ struct PortfolioSummary {
     int gainers = 0;
     int losers = 0;
     QString last_updated;
+    int priced_positions = 0;
 };
 
 // ── Computed analytics ───────────────────────────────────────────────────────

@@ -1355,6 +1355,7 @@ set(SERVICE_SOURCES
     src/services/portfolio/PortfolioService_Summary.cpp
     src/services/portfolio/PortfolioService_Metrics.cpp
     src/services/portfolio/PortfolioService_ImportExport.cpp
+    src/services/portfolio/PortfolioTransfer.cpp
     src/services/portfolio/PortfolioAnalyticsService.cpp
     src/services/quantlib/QuantLibClient.cpp
     src/services/economics/EconomicsService.cpp
@@ -2873,6 +2874,10 @@ else()
     set(_FINCEPT_EXE_FLAGS "")
     set(_FINCEPT_PLATFORM_SOURCES "")
 endif()
+
+# Keep the new leaf out of unity batches so existing source grouping is stable.
+set_source_files_properties(src/services/portfolio/PortfolioTransfer.cpp
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION TRUE)
 
 add_executable(FinceptTerminal ${_FINCEPT_EXE_FLAGS}
     ${CORE_SOURCES}

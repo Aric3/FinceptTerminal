@@ -123,7 +123,12 @@ void PortfolioScreen::on_summary_loaded(portfolio::PortfolioSummary summary) {
     command_bar_->set_refreshing(false);
     stats_ribbon_->set_summary(summary);
     status_bar_->set_summary(summary);
-    status_bar_->set_feed_state(true);
+    const bool complete = summary.priced_positions == summary.total_positions;
+    status_bar_->set_feed_state(complete,
+                                complete ? QString()
+                                         : tr("Quotes available for %1 of %2 holdings; missing prices use cost basis.")
+                                               .arg(summary.priced_positions)
+                                               .arg(summary.total_positions));
 
     update_main_view_data();
     update_content_state();

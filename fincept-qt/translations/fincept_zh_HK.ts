@@ -14574,6 +14574,14 @@ You can now import it using the BROWSE button.</source>
         <source>File selected: %1</source>
         <translation>已選擇檔案:%1</translation>
     </message>
+    <message>
+        <source>Add holdings and history to existing portfolio:</source>
+        <translation>向現有組合加入持倉和交易歷史：</translation>
+    </message>
+    <message>
+        <source>Adds quantities and appends history. Importing the same file again adds it again.</source>
+        <translation>合併會累加持倉數量並追加交易歷史。再次匯入同一檔案會重複加入。</translation>
+    </message>
 </context>
 <context>
     <name>fincept::screens::KeyCaptureDialog</name>
@@ -19079,6 +19087,14 @@ Country examples: United States, China, Germany, India, Japan, World</source>
         <source>Close / Delete Position</source>
         <translation>平倉 / 刪除持倉</translation>
     </message>
+    <message>
+        <source>Unavailable</source>
+        <translation>不可用</translation>
+    </message>
+    <message>
+        <source>No quote received; valuation uses cost basis.</source>
+        <translation>未取得報價；估值暫按成本計算。</translation>
+    </message>
 </context>
 <context>
     <name>fincept::screens::PortfolioCommandBar</name>
@@ -20178,6 +20194,10 @@ Expected format:
     <message>
         <source>Unclassified</source>
         <translation>未分類</translation>
+    </message>
+    <message>
+        <source>Quotes available for %1 of %2 holdings; missing prices use cost basis.</source>
+        <translation>%2 項持倉中已取得 %1 項報價；缺報價部分暫按成本估值。</translation>
     </message>
 </context>
 <context>
@@ -41252,6 +41272,13 @@ to edit properties</source>
     <message>
         <source>Search country…</source>
         <translation>搜尋國家…</translation>
+    </message>
+</context>
+<context>
+    <name>fincept::services::PortfolioService</name>
+    <message>
+        <source>Expected a JSON object: %1</source>
+        <translation>需要 JSON 物件：%1</translation>
     </message>
 </context>
 </TS>

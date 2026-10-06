@@ -459,12 +459,16 @@ void PortfolioBlotter::subscribe_broker_quotes() {
 }
 
 void PortfolioBlotter::update_row_price(const QString& symbol, double ltp, double change_pct) {
+    if (!std::isfinite(ltp) || ltp <= 0 || !std::isfinite(change_pct))
+        return;
     for (int r = 0; r < table_->rowCount(); ++r) {
         auto* item = table_->item(r, kColSymbol);
         if (!item || item->data(Qt::UserRole).toString() != symbol)
             continue;
-        if (auto* last_item = table_->item(r, kColLast))
+        if (auto* last_item = table_->item(r, kColLast)) {
             last_item->setText(format_value(ltp));
+            last_item->setToolTip({});
+        }
         // Recalculate market value & P&L from holdings data
         const int idx = r + (current_page_ - 1) * page_size_;
         const auto& view = visible_view();
@@ -743,7 +747,9 @@ void PortfolioBlotter::populate_table() {
                                                                                        : 2));
 
         // LAST (price)
-        set_cell(kColLast, format_value(h.current_price));
+        set_cell(kColLast, h.has_quote ? format_value(h.current_price) : tr("Unavailable"));
+        if (!h.has_quote)
+            table_->item(r, kColLast)->setToolTip(tr("No quote received; valuation uses cost basis."));
 
         // AVG COST
         set_cell(kColAvgCost, format_value(h.avg_buy_price));

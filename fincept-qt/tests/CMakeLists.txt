@@ -187,6 +187,7 @@ fincept_add_test(tst_feed_parsing
 # migrations needed by these entities, not the entire application schema.
 fincept_add_test(tst_portfolio_storage
     tst_portfolio_storage.cpp
+    ../src/services/portfolio/PortfolioTransfer.cpp
     ../src/storage/repositories/PortfolioRepository.cpp
     ../src/storage/repositories/WatchlistRepository.cpp
     ../src/storage/repositories/SettingsRepository.cpp
@@ -200,3 +201,5 @@ fincept_add_test(tst_portfolio_storage
     ../src/storage/sqlite/migrations/v022_portfolio_broker_link.cpp
     ../src/core/logging/Logger.cpp)
 target_link_libraries(tst_portfolio_storage PRIVATE Qt6::Sql)
+
+fincept_add_test(tst_portfolio_valuation tst_portfolio_valuation.cpp)

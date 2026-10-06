@@ -11,7 +11,7 @@ settings,部分通过,QSettings / Keychain / ProxyManager,先前代理保存/真
 about,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
 support,本地版停用,官方账户/社区/服务,EditionPolicy显式停用,旧布局显示不可用提示,fincept-qt/src/core/config/EditionPolicy.h
 notes,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
-portfolio,部分通过,SQLite；行情及Python分析,本轮空工作区正确显示；未创建测试持仓；真实仓储临时SQLite：重复加仓成本120/数量15；关闭重读；交易金额360；快照同日替换；删除关联清理通过,JSON导入导出/市值盈亏与缺报价行为/事务失败回滚；GUI真实组合未写测试数据,fincept-qt/src/storage/repositories/PortfolioRepository.cpp
+portfolio,部分通过,SQLite；行情及Python分析,临时SQLite仓储CRUD持久化/JSON2.0往返及1.0重放/合并加权成本/导入失败整体回滚；纯市值盈亏权重及缺报价计算通过；GUI空工作区和中文导入提示通过,独立应用profile端到端持仓和故障报价；CSV文件流程；历史NAV重建；GUI真实组合未写测试数据,fincept-qt/src/services/portfolio/PortfolioTransfer.cpp
 ai_chat,待配置,用户自己的LLM提供商,解锁后实际页面显示无提供商、无模型；未发送聊天或读取密钥,用户配置独立提供商后验证连接/流式响应/取消/工具调用,fincept-qt/src/services/llm/ProviderCatalog.cpp
 backtesting,部分通过,Python各回测provider,实际VectorBT/SPY日线SMA10/20 completed；250条权益/8笔交易；Yahoo非模拟；曲线和JSON导出通过；资本/收益/回撤/手续费/胜率一致；修复版实际保存面板默认Documents已验证,固定数据策略正确性/自定义参数/其他5引擎/失败恢复,fincept-qt/src/services/backtesting/BacktestingService.cpp
 algo_trading,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp

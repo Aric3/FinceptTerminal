@@ -201,10 +201,13 @@ static void wire_app_lifecycle(QApplication& app, fincept::InstanceLock& lock) {
         if (choice == QStringLiteral("show_launchpad")) {
             fincept::screens::LaunchpadScreen::instance()->surface();
         } else {
-            // "quit" or any unknown value → quit (the safe default).
+            // Defer quitting until the native close/termination event returns.
+            // A synchronous quit here re-enters AppKit termination on macOS,
+            // bypassing aboutToQuit and deleting styled toolbars after QtGui
+            // has already destroyed its brush resources.
             QCoreApplication::quit();
         }
-    });
+    }, Qt::QueuedConnection);
 }
 
 int main(int argc, char* argv[]) {

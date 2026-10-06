@@ -2,7 +2,7 @@ screen_id,status,dependency,evidence,next_check,source
 dashboard,部分通过,混合行情/新闻/官方日历,先前行情与新闻有数据；官方日历无本地替代,刷新/离线/错误恢复,fincept-qt/src/services/markets/MarketDataService.cpp
 markets,部分通过,Python yfinance / Yahoo,先前9面板、270单元格加载；快速切换通过,逐项刷新/历史数据/有效代码校验,fincept-qt/src/services/markets/MarketDataService.cpp
 crypto_trading,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
-news,部分通过,公开RSS；部分分析依赖官方API,实际列表824→833文章；Nobel搜索14条；无匹配0条；清空恢复；解析测试通过,修复无匹配时误提示断网；OFFLINE应区分官方实时流与RSS；分类/导出待验收,fincept-qt/src/services/news/NewsService_Feeds.cpp
+news,部分通过,公开RSS；部分分析依赖官方API,实际列表824→833文章；Nobel搜索14条；无匹配0条；清空恢复；解析测试通过；修复版无匹配中文提示及清空恢复797条已验证,OFFLINE应区分官方实时流与RSS；分类/导出待验收,fincept-qt/src/services/news/NewsService_Feeds.cpp
 forum,本地版停用,官方账户/社区/服务,EditionPolicy显式停用,旧布局显示不可用提示,fincept-qt/src/core/config/EditionPolicy.h
 watchlist,部分通过,SQLite；行情服务,真实仓储临时SQLite：代码大小写归一/重复去重/改名/关闭重读/删除级联与拒绝孤立记录通过,GUI新增编辑/行情刷新/排序/重启行为,fincept-qt/src/storage/repositories/WatchlistRepository.cpp
 report_builder,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
@@ -13,7 +13,7 @@ support,本地版停用,官方账户/社区/服务,EditionPolicy显式停用,旧
 notes,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
 portfolio,部分通过,SQLite；行情及Python分析,本轮空工作区正确显示；未创建测试持仓；真实仓储临时SQLite：重复加仓成本120/数量15；关闭重读；交易金额360；快照同日替换；删除关联清理通过,JSON导入导出/市值盈亏与缺报价行为/事务失败回滚；GUI真实组合未写测试数据,fincept-qt/src/storage/repositories/PortfolioRepository.cpp
 ai_chat,待配置,用户自己的LLM提供商,解锁后实际页面显示无提供商、无模型；未发送聊天或读取密钥,用户配置独立提供商后验证连接/流式响应/取消/工具调用,fincept-qt/src/services/llm/ProviderCatalog.cpp
-backtesting,部分通过,Python各回测provider,实际VectorBT/SPY日线SMA10/20 completed；250条权益/8笔交易；Yahoo非模拟；曲线和JSON导出通过；资本/收益/回撤/手续费/胜率一致,保存目录默认根目录需改进；固定数据策略正确性/自定义参数/其他5引擎/失败恢复,fincept-qt/src/services/backtesting/BacktestingService.cpp
+backtesting,部分通过,Python各回测provider,实际VectorBT/SPY日线SMA10/20 completed；250条权益/8笔交易；Yahoo非模拟；曲线和JSON导出通过；资本/收益/回撤/手续费/胜率一致；修复版实际保存面板默认Documents已验证,固定数据策略正确性/自定义参数/其他5引擎/失败恢复,fincept-qt/src/services/backtesting/BacktestingService.cpp
 algo_trading,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
 node_editor,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
 code_editor,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp

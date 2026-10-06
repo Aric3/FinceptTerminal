@@ -1,6 +1,7 @@
 #include "screens/dashboard/DashboardStatusBar.h"
 
 #include "core/config/AppConfig.h"
+#include "core/config/EditionPolicy.h"
 #include "screens/action_center/PendingOrdersBadge.h"
 #include "ui/theme/Theme.h"
 #include "ui/theme/ThemeManager.h"
@@ -19,8 +20,8 @@
 #if defined(Q_OS_WIN)
 // windows.h must come first — psapi.h depends on its types (BOOL, WINAPI, …)
 // and including psapi.h alone yields C2146 / C2086 cascades.
-#    include <windows.h>
 #    include <psapi.h>
+#    include <windows.h>
 #elif defined(Q_OS_MAC)
 #    include <mach/mach.h>
 #elif defined(Q_OS_LINUX)
@@ -280,6 +281,11 @@ void DashboardStatusBar::update_memory() {
 }
 
 void DashboardStatusBar::ping_api() {
+    if (edition::is_local()) {
+        feeds_label_->setText(tr("LOCAL"));
+        latency_label_->setText(tr("LAT: N/A"));
+        return;
+    }
     QNetworkRequest req(QUrl(fincept::AppConfig::instance().api_base_url() + "/health"));
     req.setTransferTimeout(5000);
     // Per-request timer. A single shared member was restarted by every new probe,

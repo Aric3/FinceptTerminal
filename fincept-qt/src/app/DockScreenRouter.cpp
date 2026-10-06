@@ -1,3 +1,5 @@
+#include "core/config/EditionPolicy.h"
+
 // src/app/DockScreenRouter.cpp
 //
 // Core: screen/factory registration, title_for_id, group badges,
@@ -7,7 +9,6 @@
 //   - DockScreenRouter_PanelOps.cpp    — duplicate / tear-off / tile / move
 //   - DockScreenRouter_Materialize.cpp — dock-widget construction + lazy materialise
 #include "app/DockScreenRouter.h"
-
 #include "app/WindowFrame.h"
 #include "auth/InactivityGuard.h"
 #include "core/components/PopularityTracker.h"
@@ -218,6 +219,14 @@ void DockScreenRouter::register_screen(const QString& id, QWidget* screen) {
 }
 
 void DockScreenRouter::register_factory(const QString& id, ScreenFactory factory) {
+    if (!edition::allows_screen(id)) {
+        factory = []() -> QWidget* {
+            auto* label = new QLabel(QObject::tr("This feature depends on official services that are disabled in the local edition."));
+            label->setAlignment(Qt::AlignCenter);
+            label->setWordWrap(true);
+            return label;
+        };
+    }
     factories_[id] = std::move(factory);
 }
 

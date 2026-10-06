@@ -1,3 +1,5 @@
+#include "core/config/EditionPolicy.h"
+
 // src/app/WindowFrame_Auth.cpp
 //
 // Auth-flow handlers: show_login/register/forgot_password/pricing/info_*,
@@ -48,6 +50,20 @@ void wf_auth_apply_chat_bubble_setting(AiChatBubble* bubble) {
 } // namespace
 
 void WindowFrame::on_auth_state_changed() {
+    if (edition::is_local()) {
+        if (locked_)
+            return;
+        if (auth::PinManager::instance().has_pin() && !pin_gate_cleared_) {
+            lock_screen_->show_unlock();
+            locked_ = true;
+            set_shell_visible(false);
+            stack_->setCurrentIndex(3);
+            auth::InactivityGuard::instance().set_terminal_locked(true);
+        } else if (stack_->currentIndex() != 1 && stack_->currentIndex() != 2) {
+            on_terminal_unlocked();
+        }
+        return;
+    }
     auto& auth = auth::AuthManager::instance();
 
     // If logged out while the lock screen is active (e.g. max PIN attempts → reauth),
@@ -136,7 +152,7 @@ void WindowFrame::on_auth_state_changed() {
             }
         }
 
-        if (auth.session().has_paid_plan()) {
+        if (edition::is_local() || auth.session().has_paid_plan()) {
             // Defensive: at this point the PIN gate above must have either
             // routed us to the lock screen (and returned) or confirmed
             // pin_gate_cleared_. If we are about to show the shell while
@@ -203,6 +219,10 @@ void WindowFrame::on_auth_state_changed() {
 // be seen by an unauthenticated user. Title is also reset by set_shell_visible
 // so the last-visited screen name does not leak.
 void WindowFrame::enter_auth_stack(int auth_index) {
+    if (edition::is_local()) {
+        on_auth_state_changed();
+        return;
+    }
     set_shell_visible(false);
     stack_->setCurrentIndex(0);
     auth_stack_->setCurrentIndex(auth_index);
@@ -243,7 +263,7 @@ void WindowFrame::show_info_help() {
 
 void WindowFrame::show_lock_screen() {
     auto& auth = auth::AuthManager::instance();
-    if (!auth.is_authenticated()) {
+    if ((!edition::is_local() && !auth.is_authenticated()) || !auth::PinManager::instance().has_pin()) {
         LOG_DEBUG("WindowFrame", "show_lock_screen: ignored — not authenticated");
         return;
     }
@@ -375,7 +395,7 @@ void WindowFrame::on_terminal_unlocked() {
     // Reset PIN lockout on successful unlock
     auth::PinManager::instance().reset_lockout();
 
-    if (auth.session().has_paid_plan()) {
+    if (edition::is_local() || auth.session().has_paid_plan()) {
         set_shell_visible(true);
         stack_->setCurrentIndex(chat_mode_ ? 2 : 1); // locked from chat mode → back to chat mode
         // Restore chat bubble based on setting (chat mode keeps it hidden)

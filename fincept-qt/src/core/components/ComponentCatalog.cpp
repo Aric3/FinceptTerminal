@@ -1,4 +1,5 @@
 #include "core/components/ComponentCatalog.h"
+#include "core/config/EditionPolicy.h"
 
 #include "core/components/PopularityTracker.h"
 #include "core/logging/Logger.h"
@@ -41,7 +42,7 @@ int ComponentCatalog::load_from_file(const QString& path) {
         if (!v.isObject())
             continue;
         ComponentMeta m = ComponentMeta::from_json(v.toObject());
-        if (!m.is_valid())
+        if (!m.is_valid() || !edition::allows_screen(m.id))
             continue;
         if (index_by_id_.contains(m.id)) {
             LOG_WARN("ComponentCatalog", QString("Duplicate id: %1").arg(m.id));

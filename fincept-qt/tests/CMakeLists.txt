@@ -128,3 +128,16 @@ fincept_add_test(tst_indicator_engine
     "${PROJECT_SOURCE_DIR}/src/algo_engine/IndicatorEngine.cpp")
 
 message(STATUS "Fincept tests: tst_broker_modify_fields, tst_result, tst_order_validator, tst_indicator_engine")
+
+if(FINCEPT_LOCAL_EDITION)
+    fincept_add_test(tst_local_edition
+        tst_local_edition.cpp
+        ../src/services/llm/ProviderCatalog.cpp
+        ../src/network/http/HttpClient.cpp
+        ../src/network/cloud/CloudClient.cpp
+        ../src/core/logging/Logger.cpp)
+    target_link_libraries(tst_local_edition PRIVATE Qt6::Network)
+endif()
+
+fincept_add_test(tst_proxy_manager tst_proxy_manager.cpp ../src/network/ProxyManager.cpp)
+target_link_libraries(tst_proxy_manager PRIVATE Qt6::Network)

@@ -1,14 +1,30 @@
 #include "network/cloud/CloudClient.h"
 
+#include "core/config/EditionPolicy.h"
 #include "core/logging/Logger.h"
 
 #include <QJsonDocument>
 #include <QNetworkReply>
+#include <QTimer>
 #include <QUrl>
 
 #include <chrono>
 
 namespace fincept::cloud {
+
+namespace {
+bool reject_local_cloud(const QObject* receiver, CloudClient::Callback& callback) {
+    if (!edition::is_local())
+        return false;
+    QTimer::singleShot(0, receiver, [cb = std::move(callback)]() {
+        CloudResponse result;
+        result.error = QStringLiteral("service_disabled");
+        result.message = QStringLiteral("Official cloud services are disabled in the local edition.");
+        cb(result);
+    });
+    return true;
+}
+} // namespace
 
 CloudClient& CloudClient::instance() {
     static CloudClient s;
@@ -96,23 +112,31 @@ void CloudClient::finish(QNetworkReply* reply, Callback cb, const QObject* conte
 }
 
 void CloudClient::get(const QString& endpoint, Callback cb, const QObject* context) {
+    if (reject_local_cloud(context ? context : this, cb))
+        return;
     LOG_DEBUG("CloudSync", "GET " + endpoint);
     finish(nam_->get(build_request(endpoint)), std::move(cb), context);
 }
 
 void CloudClient::post(const QString& endpoint, const QJsonObject& body, Callback cb, const QObject* context) {
+    if (reject_local_cloud(context ? context : this, cb))
+        return;
     LOG_DEBUG("CloudSync", "POST " + endpoint);
     finish(nam_->post(build_request(endpoint), QJsonDocument(body).toJson(QJsonDocument::Compact)), std::move(cb),
            context);
 }
 
 void CloudClient::put(const QString& endpoint, const QJsonObject& body, Callback cb, const QObject* context) {
+    if (reject_local_cloud(context ? context : this, cb))
+        return;
     LOG_DEBUG("CloudSync", "PUT " + endpoint);
     finish(nam_->put(build_request(endpoint), QJsonDocument(body).toJson(QJsonDocument::Compact)), std::move(cb),
            context);
 }
 
 void CloudClient::del(const QString& endpoint, Callback cb, const QObject* context) {
+    if (reject_local_cloud(context ? context : this, cb))
+        return;
     LOG_DEBUG("CloudSync", "DELETE " + endpoint);
     finish(nam_->deleteResource(build_request(endpoint)), std::move(cb), context);
 }

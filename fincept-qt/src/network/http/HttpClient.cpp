@@ -1,5 +1,6 @@
 #include "network/http/HttpClient.h"
 
+#include "core/config/EditionPolicy.h"
 #include "core/logging/Logger.h"
 
 #include <QJsonArray>
@@ -65,6 +66,18 @@ bool http_is_absolute_url(const QString& url) {
 /// a scheme-less third-party target ("hooks.slack.com/services/..." typed
 /// without "https://") must NOT fall into that branch — it would POST the
 /// webhook payload plus the user's Fincept credentials to the Fincept backend.
+bool http_reject_official_service(const QString& url, const QString& base, const QObject* receiver,
+                                  HttpClient::JsonCallback& callback) {
+    const QUrl target(http_is_absolute_url(url) ? url : base + url);
+    if (edition::allows_url(target))
+        return false;
+    QTimer::singleShot(0, receiver, [cb = std::move(callback)]() {
+        cb(Result<QJsonDocument>::err(
+            "Official services are disabled in the local edition. Configure an independent data source."));
+    });
+    return true;
+}
+
 bool http_is_sendable_url(const QString& url) {
     return http_is_absolute_url(url) || url.startsWith(QLatin1Char('/'));
 }
@@ -226,8 +239,9 @@ void HttpClient::handle_reply(QNetworkReply* reply, JsonCallback callback, const
             // path included — scrub it with the same redaction as the URL itself.
             const QString safe_url = http_log_url(reply->url().toString(), base_url);
             QString safe_error = reply->errorString();
-            for (const QString& raw : {reply->url().toString(), reply->url().toString(QUrl::FullyEncoded),
-                                       reply->request().url().toString(), reply->request().url().toString(QUrl::FullyEncoded)}) {
+            for (const QString& raw :
+                 {reply->url().toString(), reply->url().toString(QUrl::FullyEncoded), reply->request().url().toString(),
+                  reply->request().url().toString(QUrl::FullyEncoded)}) {
                 if (!raw.isEmpty())
                     safe_error.replace(raw, safe_url);
             }
@@ -270,6 +284,8 @@ void HttpClient::handle_reply(QNetworkReply* reply, JsonCallback callback, const
 }
 
 void HttpClient::get(const QString& url, JsonCallback callback, const QObject* context, const Headers& extra_headers) {
+    if (http_reject_official_service(url, base_url_, context ? context : this, callback))
+        return;
     if (!http_is_sendable_url(url)) {
         http_reject_bad_url(context ? context : this, std::move(callback));
         return;
@@ -281,6 +297,8 @@ void HttpClient::get(const QString& url, JsonCallback callback, const QObject* c
 
 void HttpClient::post(const QString& url, const QJsonObject& body, JsonCallback callback, const QObject* context,
                       const Headers& extra_headers) {
+    if (http_reject_official_service(url, base_url_, context ? context : this, callback))
+        return;
     if (!http_is_sendable_url(url)) {
         http_reject_bad_url(context ? context : this, std::move(callback));
         return;
@@ -293,6 +311,8 @@ void HttpClient::post(const QString& url, const QJsonObject& body, JsonCallback 
 
 void HttpClient::post_form(const QString& url, const QMap<QString, QString>& fields, JsonCallback callback,
                            const QObject* context, const Headers& extra_headers) {
+    if (http_reject_official_service(url, base_url_, context ? context : this, callback))
+        return;
     if (!http_is_sendable_url(url)) {
         http_reject_bad_url(context ? context : this, std::move(callback));
         return;
@@ -318,6 +338,8 @@ void HttpClient::post_form(const QString& url, const QMap<QString, QString>& fie
 
 void HttpClient::put(const QString& url, const QJsonObject& body, JsonCallback callback, const QObject* context,
                      const Headers& extra_headers) {
+    if (http_reject_official_service(url, base_url_, context ? context : this, callback))
+        return;
     if (!http_is_sendable_url(url)) {
         http_reject_bad_url(context ? context : this, std::move(callback));
         return;
@@ -329,6 +351,8 @@ void HttpClient::put(const QString& url, const QJsonObject& body, JsonCallback c
 }
 
 void HttpClient::del(const QString& url, JsonCallback callback, const QObject* context, const Headers& extra_headers) {
+    if (http_reject_official_service(url, base_url_, context ? context : this, callback))
+        return;
     if (!http_is_sendable_url(url)) {
         http_reject_bad_url(context ? context : this, std::move(callback));
         return;
@@ -340,6 +364,8 @@ void HttpClient::del(const QString& url, JsonCallback callback, const QObject* c
 
 void HttpClient::del(const QString& url, const QJsonObject& body, JsonCallback callback, const QObject* context,
                      const Headers& extra_headers) {
+    if (http_reject_official_service(url, base_url_, context ? context : this, callback))
+        return;
     if (!http_is_sendable_url(url)) {
         http_reject_bad_url(context ? context : this, std::move(callback));
         return;

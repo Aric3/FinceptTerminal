@@ -1,4 +1,4 @@
-﻿#include "algo_engine/AlgoEngineProducer.h"
+#include "algo_engine/AlgoEngineProducer.h"
 #include "algo_engine/ScanMonitor.h"
 #include "algo_engine/UniverseScanSelftest.h"
 #include "algo_engine/fno/FnoAlgoSelftest.h"
@@ -14,6 +14,7 @@
 #include "core/components/ComponentCatalog.h"
 #include "core/config/AppConfig.h"
 #include "core/config/AppPaths.h"
+#include "core/config/EditionPolicy.h"
 #include "core/config/ProfileManager.h"
 #include "core/crash/CrashHandler.h"
 #include "core/currency/CurrencyManager.h"
@@ -32,6 +33,7 @@
 #include "mcp/McpInit.h"
 #include "mcp/ProviderToolFormatSelfTest.h"
 #include "mcp/ToolSelfTest.h"
+#include "network/ProxyManager.h"
 #include "network/http/HttpClient.h"
 #include "python/OptionGreeksWorker.h"
 #include "python/PythonSetupManager.h"
@@ -291,8 +293,9 @@ int main(int argc, char* argv[]) {
     // "FinceptTerminal --profile work" and "FinceptTerminal --profile personal"
     // run as two independent primaries.
     QApplication app(argc, argv);
-    app.setApplicationName("FinceptTerminal");
-    app.setOrganizationName("Fincept");
+    app.setApplicationName(fincept::edition::application());
+    app.setOrganizationName(fincept::edition::organization());
+    fincept::network::ProxyManager::initialize();
 #ifndef FINCEPT_VERSION_STRING
 #    define FINCEPT_VERSION_STRING "0.0.0-dev"
 #endif
@@ -405,10 +408,14 @@ int main(int argc, char* argv[]) {
     // perceived latency drops without changing functional behavior.
     fincept::services::NewsService::instance().ensure_registered_with_hub();
     fincept::services::EconomicsService::instance().ensure_registered_with_hub();
+    if (!fincept::edition::is_local())
     fincept::services::MacroCalendarService::instance().ensure_registered_with_hub();
     fincept::trading::DataStreamManager::instance().ensure_registered_with_hub();
+    if (!fincept::edition::is_local())
     fincept::services::geo::GeopoliticsService::instance().ensure_registered_with_hub();
+    if (!fincept::edition::is_local())
     fincept::services::maritime::MaritimeService::instance().ensure_registered_with_hub();
+    if (!fincept::edition::is_local())
     fincept::services::maritime::PortsCatalog::instance().ensure_registered_with_hub();
     fincept::services::RelationshipMapService::instance().ensure_registered_with_hub();
     fincept::services::ma::MAAnalyticsService::instance().ensure_registered_with_hub();
@@ -503,6 +510,7 @@ int main(int argc, char* argv[]) {
             reg.register_adapter(std::make_unique<fincept::services::prediction::kalshi_ns::KalshiAdapter>());
             // Fincept internal prediction-market adapter (demo mode until
             // `fincept.markets_endpoint` is configured).
+            if (!fincept::edition::is_local())
             reg.register_adapter(
                 std::make_unique<fincept::services::prediction::fincept_internal::FinceptInternalAdapter>());
 
@@ -520,7 +528,7 @@ int main(int argc, char* argv[]) {
                 // (prediction:kalshi:price:*, prediction:kalshi:orderbook:*) with the hub.
                 ks->ensure_registered_with_hub();
             }
-            if (auto* fi = reg.adapter(QStringLiteral("fincept"))) {
+            if (auto* fi = reg.adapter(QStringLiteral("fincept")); fi && !fincept::edition::is_local()) {
                 fi->ensure_registered_with_hub();
             }
         }
@@ -536,6 +544,8 @@ int main(int argc, char* argv[]) {
 
     // ── Group 2: Fincept Cloud sync ─────────────────────────────────────────
     auto init_cloud_sync = []() {
+        if (fincept::edition::is_local())
+            return;
         // Drains the durable outbox (push) + pulls cloud→local. NOT a DataHub
         // producer; reads stay on the local repo cache. Every adapter must be
         // registered before initialize(), which is why they share one group.
@@ -568,13 +578,16 @@ int main(int argc, char* argv[]) {
     // ── Group 3: wallet / treasury / billing + broker session monitor ───────
     auto init_wallet_treasury_and_monitors = []() {
         // Token metadata refresh — network call to Jupiter aggregator.
-        fincept::wallet::TokenMetadataService::instance().refresh_from_jupiter_async();
+        if (!fincept::edition::is_local())
+            fincept::wallet::TokenMetadataService::instance().refresh_from_jupiter_async();
         // Wallet — `wallet:balance:*`, `market:price:token:*`.
-        fincept::wallet::WalletService::instance().ensure_registered_with_hub();
-        fincept::wallet::WalletService::instance().restore_from_storage();
+        if (!fincept::edition::is_local())
+            fincept::wallet::WalletService::instance().ensure_registered_with_hub();
+        if (!fincept::edition::is_local())
+            fincept::wallet::WalletService::instance().restore_from_storage();
 
         // Fee-discount eligibility producer (paid screens only).
-        {
+        if (!fincept::edition::is_local()) {
             static fincept::billing::FeeDiscountService discount_service;
             auto& hub = fincept::datahub::DataHub::instance();
             hub.register_producer(&discount_service);
@@ -585,7 +598,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Buyback & burn / treasury producers (treasury:*).
-        {
+        if (!fincept::edition::is_local()) {
             static fincept::wallet::BuybackBurnService buyback_burn_service;
             static fincept::wallet::TreasuryService treasury_service;
             auto& hub = fincept::datahub::DataHub::instance();
@@ -619,7 +632,7 @@ int main(int argc, char* argv[]) {
         }
 
         // STAKE tab producers (veFNCPT lock + real-yield + tier system).
-        {
+        if (!fincept::edition::is_local()) {
             auto& hub = fincept::datahub::DataHub::instance();
             hub.register_producer(&fincept::wallet::StakingService::instance());
             hub.register_producer(&fincept::wallet::RealYieldService::instance());

@@ -1,6 +1,7 @@
 // ReportBuilderService.cpp — see header for design rationale.
 
 #include "services/report_builder/ReportBuilderService.h"
+#include "core/config/EditionPolicy.h"
 
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
@@ -348,7 +349,7 @@ ReportBuilderService::ReportBuilderService() {
 
     // Restore current_file_ from settings so the title bar shows the right
     // path on relaunch. (The doc itself comes from autosave below.)
-    QSettings s("Fincept", "FinceptTerminal");
+    QSettings s(edition::organization(), edition::application());
     current_file_ = s.value(kCurrentFileKey).toString();
 
     // Try to restore from autosave on construction. Failures are silent —
@@ -643,7 +644,7 @@ void ReportBuilderService::set_current_file(const QString& path) {
 }
 
 void ReportBuilderService::persist_current_file() {
-    QSettings s("Fincept", "FinceptTerminal");
+    QSettings s(edition::organization(), edition::application());
     s.setValue(kCurrentFileKey, current_file_);
 }
 
@@ -677,13 +678,13 @@ void ReportBuilderService::trigger_autosave() {
 }
 
 void ReportBuilderService::load_recent() const {
-    QSettings s("Fincept", "FinceptTerminal");
+    QSettings s(edition::organization(), edition::application());
     recent_cache_ = s.value(kRecentKey).toStringList();
     recent_loaded_ = true;
 }
 
 void ReportBuilderService::save_recent() const {
-    QSettings s("Fincept", "FinceptTerminal");
+    QSettings s(edition::organization(), edition::application());
     s.setValue(kRecentKey, recent_cache_);
 }
 

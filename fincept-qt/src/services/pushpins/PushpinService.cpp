@@ -1,4 +1,5 @@
 #include "services/pushpins/PushpinService.h"
+#include "core/config/EditionPolicy.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -59,7 +60,7 @@ void PushpinService::move(const SymbolRef& ref, int new_index) {
 }
 
 void PushpinService::load() {
-    QSettings settings("Fincept", "FinceptTerminal");
+    QSettings settings(edition::organization(), edition::application());
     const QByteArray blob = settings.value("pushpins/list").toByteArray();
     const QJsonDocument doc = QJsonDocument::fromJson(blob);
     if (!doc.isArray())
@@ -77,7 +78,7 @@ void PushpinService::save() const {
     QJsonArray arr;
     for (const SymbolRef& p : pins_)
         arr.append(p.to_json());
-    QSettings settings("Fincept", "FinceptTerminal");
+    QSettings settings(edition::organization(), edition::application());
     settings.setValue("pushpins/list", QJsonDocument(arr).toJson(QJsonDocument::Compact));
 }
 

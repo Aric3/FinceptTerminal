@@ -1,6 +1,7 @@
 #include "screens/auth/LockScreen.h"
 
 #include "auth/PinManager.h"
+#include "core/config/EditionPolicy.h"
 #include "core/logging/Logger.h"
 #include "ui/theme/Theme.h"
 #include "ui/widgets/LanguageSwitcher.h"
@@ -422,6 +423,7 @@ void LockScreen::build_unlock_page() {
                                           .arg(ui::colors::TEXT_DIM(), ui::colors::AMBER()));
     connect(unlock_forgot_btn_, &QPushButton::clicked, this, [this]() { emit reauth_requested(); });
     vl->addWidget(unlock_forgot_btn_, 0, Qt::AlignHCenter);
+    unlock_forgot_btn_->setVisible(!edition::is_local());
 
     vl->addStretch();
 
@@ -485,6 +487,7 @@ void LockScreen::build_lockout_page() {
     lockout_reauth_btn_->setStyleSheet(btn_danger());
     connect(lockout_reauth_btn_, &QPushButton::clicked, this, [this]() { emit reauth_requested(); });
     vl->addWidget(lockout_reauth_btn_);
+    lockout_reauth_btn_->setVisible(!edition::is_local());
 
     vl->addStretch();
 
@@ -557,7 +560,7 @@ void LockScreen::refresh_attempts_label() {
 
 void LockScreen::activate() {
     auto& pm = auth::PinManager::instance();
-    if (pm.failed_attempts() >= auth::PinManager::kMaxAttempts) {
+    if (!edition::is_local() && pm.failed_attempts() >= auth::PinManager::kMaxAttempts) {
         show_lockout();
     } else if (pm.has_pin()) {
         show_unlock();
@@ -661,7 +664,7 @@ void LockScreen::on_unlock_submit() {
     unlock_pin_input_->clear();
     unlock_pin_input_->setFocus();
 
-    if (pm.failed_attempts() >= auth::PinManager::kMaxAttempts) {
+    if (!edition::is_local() && pm.failed_attempts() >= auth::PinManager::kMaxAttempts) {
         // max_attempts_exceeded signal will trigger show_lockout()
         return;
     }

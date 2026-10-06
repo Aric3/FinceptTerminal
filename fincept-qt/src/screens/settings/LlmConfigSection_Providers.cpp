@@ -10,6 +10,7 @@
 #include "core/logging/Logger.h"
 #include "screens/settings/LlmConfigSection.h"
 #include "services/llm/LlmService.h"
+#include "services/llm/ProviderCatalog.h"
 #include "storage/repositories/LlmConfigRepository.h"
 #include "storage/repositories/LlmProfileRepository.h"
 #include "storage/repositories/SettingsRepository.h"
@@ -473,6 +474,8 @@ void LlmConfigSection::load_providers() {
     auto result = LlmConfigRepository::instance().list_providers();
     if (result.is_ok()) {
         for (const auto& p : result.value()) {
+            if (ai_chat::ProviderCatalog::is_blocked(p.provider, p.base_url))
+                continue;
             bool is_fincept = (p.provider.toLower() == "fincept");
             QString display = provider_display_name(p.provider);
             if (p.is_active) {
@@ -696,7 +699,8 @@ void LlmConfigSection::on_save_provider() {
     if (!cfg.base_url.isEmpty()) {
         const QUrl u(cfg.base_url, QUrl::StrictMode);
         const QString scheme = u.scheme().toLower();
-        if (!u.isValid() || u.host().isEmpty() || (scheme != QLatin1String("http") && scheme != QLatin1String("https"))) {
+        if (!u.isValid() || u.host().isEmpty() ||
+            (scheme != QLatin1String("http") && scheme != QLatin1String("https"))) {
             show_status(tr("Base URL must be a full http:// or https:// address"), true);
             return;
         }

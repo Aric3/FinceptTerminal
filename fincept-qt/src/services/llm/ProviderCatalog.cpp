@@ -1,3 +1,5 @@
+#include "core/config/EditionPolicy.h"
+
 // ProviderCatalog.cpp — static metadata for every known LLM provider.
 // Single source of truth shared by Settings UI (LlmConfigSection) and the
 // Alpha Arena model registry. Data moved verbatim from LlmConfigSection.cpp
@@ -10,9 +12,13 @@
 namespace fincept::ai_chat {
 
 const QStringList& ProviderCatalog::known_providers() {
-    static const QStringList kProviders = {"openai",     "anthropic", "gemini",       "groq",    "deepseek",
-                                           "openrouter", "minimax",   "kimi",         "ollama",  "xai",
-                                           "fincept",    "astraflow", "astraflow_cn", "aihubmix"};
+    static const QStringList kProviders = [] {
+        QStringList providers = {"openai", "anthropic", "gemini", "groq",    "deepseek",  "openrouter",   "minimax",
+                                 "kimi",   "ollama",    "xai",    "fincept", "astraflow", "astraflow_cn", "aihubmix"};
+        if (edition::is_local())
+            providers.removeAll(QStringLiteral("fincept"));
+        return providers;
+    }();
     return kProviders;
 }
 
@@ -21,6 +27,8 @@ const QStringList& ProviderCatalog::known_providers() {
 // config row by hand or points an OpenAI-compatible provider's base_url at
 // api.atlascloud.ai.
 bool ProviderCatalog::is_blocked(const QString& provider, const QString& base_url) {
+    if (edition::is_local() && (provider.toLower() == "fincept" || edition::is_official_service(QUrl(base_url))))
+        return true;
     if (provider.toLower() == "atlascloud")
         return true;
     return base_url.toLower().contains(QStringLiteral("atlascloud"));

@@ -1,6 +1,6 @@
-// Multi-provider LLM API client. Sync paths block on QEventLoop and must run on a worker thread.
+#include "core/config/EditionPolicy.h"
 
-#include "services/llm/LlmService.h"
+// Multi-provider LLM API client. Sync paths block on QEventLoop and must run on a worker thread.
 
 #include "auth/AuthManager.h"
 #include "core/config/AppConfig.h"
@@ -12,8 +12,7 @@
 #include "mcp/McpService.h"
 #include "services/llm/LlmContentExtractors.h"
 #include "services/llm/LlmRequestPolicy.h"
-
-#include <vector>
+#include "services/llm/LlmService.h"
 #include "services/llm/ModelCatalog.h"
 #include "services/llm/ProviderCatalog.h"
 #include "storage/repositories/LlmConfigRepository.h"
@@ -40,6 +39,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <vector>
 
 namespace fincept::ai_chat {
 
@@ -131,7 +131,7 @@ void LlmService::ensure_config() const {
     auto providers = LlmConfigRepository::instance().list_providers();
     if (providers.is_ok()) {
         for (const auto& c : providers.value()) {
-            if (c.is_active) {
+            if (c.is_active && !ProviderCatalog::is_blocked(c.provider, c.base_url)) {
                 provider_ = c.provider.toLower();
                 api_key_ = c.api_key;
                 base_url_ = c.base_url;
@@ -141,18 +141,22 @@ void LlmService::ensure_config() const {
             }
         }
         // No active provider — pick the first one.
-        if (provider_.isEmpty() && !providers.value().isEmpty()) {
-            const auto& c = providers.value().first();
+        if (provider_.isEmpty()) {
+            for (const auto& c : providers.value()) {
+                if (ProviderCatalog::is_blocked(c.provider, c.base_url))
+                    continue;
             provider_ = c.provider.toLower();
             api_key_ = c.api_key;
             base_url_ = c.base_url;
             model_ = c.model;
             tools_enabled_ = c.tools_enabled;
+                break;
+            }
         }
     }
 
     // Nothing configured — default to Fincept with the session key.
-    if (provider_.isEmpty()) {
+    if (provider_.isEmpty() && !edition::is_local()) {
         provider_ = "fincept";
         model_ = "MiniMax-M2.7";
         base_url_ = {};
@@ -537,8 +541,7 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                 detail::emit_tool_progress(bare, input);
                 auto tr = mcp::McpService::instance().execute_openai_function(tool_name, input, /*allow_defer=*/true);
                 detail::note_tool_activations(bare, input, tr, activated);
-                tool_results.append(
-                    QJsonObject{{"type", "tool_result"},
+                tool_results.append(QJsonObject{{"type", "tool_result"},
                                 {"tool_use_id", tool_id},
                                 {"content", detail::encode_tool_result_for_llm(bare, tr)}});
             }
@@ -704,8 +707,7 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                         // Reconcile against the original schema so the handler gets
                         // the object it declared, not a string it will read as {}.
                         c.args = mcp::restore_gemini_call_args(
-                            mcp::McpService::instance().input_schema_for_function(c.wire_name),
-                            fc["args"].toObject());
+                            mcp::McpService::instance().input_schema_for_function(c.wire_name), fc["args"].toObject());
                         c.display = mcp::McpProvider::parse_openai_function_name(c.wire_name).second;
                         LOG_INFO(kLlmSvcTag, QString("Gemini tool loop r%1: %2").arg(round).arg(c.wire_name));
                         detail::emit_tool_progress(c.display, c.args);
@@ -793,8 +795,8 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                         const QString fn_name = fr["name"].toString();
                         const int sep = fn_name.indexOf("__");
                         const QString short_name = (sep >= 0) ? fn_name.mid(sep + 2) : fn_name;
-                        QString payload = QString::fromUtf8(
-                            QJsonDocument(fr["response"].toObject()).toJson(QJsonDocument::Compact));
+                        QString payload =
+                            QString::fromUtf8(QJsonDocument(fr["response"].toObject()).toJson(QJsonDocument::Compact));
                         if (payload.size() > kFallbackPayloadChars) {
                             payload = payload.left(kFallbackPayloadChars) +
                                       QStringLiteral("\n[... truncated %1 of %2 characters ...]")
@@ -1111,8 +1113,7 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
                     if (uobj["type"].toString() == QLatin1String("message_stop"))
                         saw_finish = true;
                     if (uobj["type"].toString() == QLatin1String("message_start"))
-                        anthropic_input_tokens =
-                            uobj["message"].toObject()["usage"].toObject()["input_tokens"].toInt();
+                        anthropic_input_tokens = uobj["message"].toObject()["usage"].toObject()["input_tokens"].toInt();
                     const QJsonArray fin_choices = uobj["choices"].toArray();
                     if (!fin_choices.isEmpty()) {
                         const QString fr = fin_choices[0].toObject()["finish_reason"].toString();
@@ -1277,7 +1278,8 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
     auto transient_status = [](int s) { return s == 429 || s == 500 || s == 502 || s == 503 || s == 504 || s == 529; };
     if (timed_out && !done && status == 0) {
         // The watchdog fired before any response headers arrived (hung connect / TLS).
-        resp.error = QStringLiteral("No response from the provider (timed out after %1 s)").arg(kStreamIdleTimeoutMs / 1000);
+        resp.error =
+            QStringLiteral("No response from the provider (timed out after %1 s)").arg(kStreamIdleTimeoutMs / 1000);
         resp.retryable = true;
         LOG_WARN(kLlmSvcTag, resp.error);
     } else if (reply->error() != QNetworkReply::NoError) {
@@ -1308,7 +1310,8 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
         } else if (timed_out && !done && !saw_finish) {
             // No bytes for the whole idle window and no terminal marker: the stream
             // died. Say so instead of presenting the partial text as a finished reply.
-            resp.error = QStringLiteral("The response stalled — no data received for %1 s").arg(kStreamIdleTimeoutMs / 1000);
+            resp.error =
+                QStringLiteral("The response stalled — no data received for %1 s").arg(kStreamIdleTimeoutMs / 1000);
             resp.content = strip_think_blocks(accumulated);
             resp.retryable = accumulated.isEmpty();
             LOG_WARN(kLlmSvcTag, resp.error);
@@ -1329,7 +1332,8 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
         }
     } else {
         const QString server_msg = parse_server_error_message(non_sse_body + partial_line + reply->readAll());
-        resp.error = server_msg.isEmpty() ? QString("HTTP %1").arg(status) : QString("HTTP %1: %2").arg(status).arg(server_msg);
+        resp.error =
+            server_msg.isEmpty() ? QString("HTTP %1").arg(status) : QString("HTTP %1: %2").arg(status).arg(server_msg);
     }
 
     // On the timeout path we fall straight out of `loop.exec()` with the reply

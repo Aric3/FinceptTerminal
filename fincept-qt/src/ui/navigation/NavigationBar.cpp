@@ -1,6 +1,7 @@
 #include "ui/navigation/NavigationBar.h"
 
 #include "auth/AuthManager.h"
+#include "core/config/EditionPolicy.h"
 #include "ui/theme/Theme.h"
 #include "ui/theme/ThemeManager.h"
 
@@ -108,6 +109,15 @@ void NavigationBar::update_clock() {
 }
 
 void NavigationBar::refresh_user_display() {
+    if (edition::is_local()) {
+        user_label_->setText(tr("LOCAL"));
+        credits_label_->hide();
+        plan_label_->hide();
+        logout_btn_->hide();
+        for (auto* separator : findChildren<QLabel*>("navSep"))
+            separator->hide();
+        return;
+    }
     const auto& s = auth::AuthManager::instance().session();
     if (!s.authenticated) {
         user_label_->setText("---");

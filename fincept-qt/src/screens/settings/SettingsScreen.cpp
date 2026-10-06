@@ -1,7 +1,7 @@
+#include "core/config/EditionPolicy.h"
+
 // SettingsScreen.cpp — thin shell hosting nav + a QStackedWidget of section
 // widgets. All per-section state and rendering lives in *Section.h/.cpp.
-
-#include "screens/settings/SettingsScreen.h"
 
 #include "core/events/EventBus.h"
 #include "core/i18n/LanguageManager.h"
@@ -17,10 +17,12 @@
 #include "screens/settings/LlmConfigSection.h"
 #include "screens/settings/LoggingSection.h"
 #include "screens/settings/McpServersSection.h"
+#include "screens/settings/NetworkSection.h"
 #include "screens/settings/NotificationsSection.h"
 #include "screens/settings/ProfilesSection.h"
 #include "screens/settings/PythonEnvSection.h"
 #include "screens/settings/SecuritySection.h"
+#include "screens/settings/SettingsScreen.h"
 #include "screens/settings/SettingsStyles.h"
 #include "screens/settings/StorageSection.h"
 #include "screens/settings/VoiceConfigSection.h"
@@ -82,7 +84,7 @@ SettingsScreen::SettingsScreen(QWidget* parent) : QWidget(parent) {
     // One factory per stack index. Used at construction AND by the language-
     // change rebuild path so we don't hardcode the type list twice.
     section_factories_.clear();
-    section_factories_.resize(16);
+    section_factories_.resize(17);
     section_factories_[0] = [] { return new CredentialsSection; };
     section_factories_[1] = [] { return new AppearanceSection; };
     section_factories_[2] = [] { return new NotificationsSection; };
@@ -98,7 +100,13 @@ SettingsScreen::SettingsScreen(QWidget* parent) : QWidget(parent) {
     section_factories_[12] = [] { return new DeveloperSection; };
     section_factories_[13] = [] { return new VoiceConfigSection; };
     section_factories_[14] = [] { return new GeneralSection; };
-    section_factories_[15] = [] { return new CloudSyncSection; };
+    section_factories_[15] = []() -> QWidget* {
+        if (edition::is_local())
+            return new QLabel(QObject::tr("Official cloud sync is disabled in the local edition."));
+        return new CloudSyncSection;
+    };
+
+    section_factories_[16] = [] { return new NetworkSection; };
 
     // Empty placeholders; the real section replaces its placeholder on first
     // visit (ensure_section_built).
@@ -141,9 +149,10 @@ SettingsScreen::SettingsScreen(QWidget* parent) : QWidget(parent) {
     // The keyword strings are search aliases only — never displayed, so they
     // stay in English (the filter also matches the translated label text).
     add_scope_header(QStringLiteral("SHELL"));
-    auto* first = make_btn(QStringLiteral("General"), 14,
-                           QStringLiteral("language locale currency window close launchpad quit"));
-    make_btn(QStringLiteral("Appearance"), 1, QStringLiteral("theme font size family density ticker chat bubble "
+    auto* first =
+        make_btn(QStringLiteral("General"), 14, QStringLiteral("language locale currency window close launchpad quit"));
+    make_btn(QStringLiteral("Appearance"), 1,
+             QStringLiteral("theme font size family density ticker chat bubble "
                                                              "animation typography interface"));
     make_btn(QStringLiteral("Notifications"), 2,
              QStringLiteral("telegram discord slack email smtp whatsapp twilio pushover ntfy pushbullet gotify "
@@ -169,7 +178,11 @@ SettingsScreen::SettingsScreen(QWidget* parent) : QWidget(parent) {
     make_btn(QStringLiteral("Python Env"), 11, QStringLiteral("packages venv pip uv numpy libraries install upgrade"));
     make_btn(QStringLiteral("Storage & Cache"), 3,
              QStringLiteral("disk database sqlite sql console cache clear delete data danger zone workspaces"));
+    if (!edition::is_local())
     make_btn(QStringLiteral("Cloud Sync"), 15, QStringLiteral("backup sync account devices domains credits"));
+
+    make_btn(QStringLiteral("Network & Proxy"), 16,
+             QStringLiteral("network system manual direct http https proxy connection"));
 
     first->setChecked(true);
     ensure_section_built(14);

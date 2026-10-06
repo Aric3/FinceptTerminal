@@ -1,10 +1,11 @@
-// QuantLibClient.cpp — Shared QuantLib API HTTP client.
+#include "core/config/EditionPolicy.h"
 
-#include "services/quantlib/QuantLibClient.h"
+// QuantLibClient.cpp — Shared QuantLib API HTTP client.
 
 #include "auth/AuthManager.h"
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "services/quantlib/QuantLibClient.h"
 #include "storage/cache/CacheManager.h"
 
 #include <QJsonArray>
@@ -14,6 +15,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPointer>
+#include <QTimer>
 #include <QUrl>
 
 static constexpr int kRefDataTtlSec = 60 * 60; // 1 hour — static reference data
@@ -178,6 +180,13 @@ mcp::ToolResult QuantLibClient::parse_response(int http_status, const QByteArray
 // ── Async call ───────────────────────────────────────────────────────────────
 
 void QuantLibClient::call(const QString& endpoint, const QJsonObject& body, QuantLibCallback callback) {
+    if (!edition::allows_url(QUrl(AppConfig::instance().api_base_url()))) {
+        QTimer::singleShot(0, this, [cb = std::move(callback)]() {
+            cb(mcp::ToolResult::fail(
+                QStringLiteral("Configure an independent QuantLib service for the local edition.")));
+        });
+        return;
+    }
     // Cache GET endpoints (static reference data) and query-param endpoints
     const bool cacheable = is_get_endpoint(endpoint) || is_query_param_endpoint(endpoint);
     if (cacheable) {

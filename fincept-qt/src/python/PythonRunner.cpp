@@ -1,6 +1,7 @@
 #include "python/PythonRunner.h"
 
 #include "core/logging/Logger.h"
+#include "network/ProxyManager.h"
 #include "python/PythonSetupManager.h"
 #include "python/PythonWorker.h"
 #include "storage/secure/SecureStorage.h"
@@ -360,7 +361,7 @@ QString PythonRunner::scripts_dir() const {
 // — encoding pins, FINCEPT_DATA_DIR, FINAGENT_DATA_DIR, base PYTHONPATH — lives
 // here. Script-specific path additions (parent-of-pkg) stay in run().
 QProcessEnvironment PythonRunner::build_python_env() const {
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    QProcessEnvironment env = network::ProxyManager::environment(QProcessEnvironment::systemEnvironment());
     env.insert("PYTHONIOENCODING", "utf-8");
     env.insert("PYTHONDONTWRITEBYTECODE", "1");
     env.insert("PYTHONUNBUFFERED", "1");

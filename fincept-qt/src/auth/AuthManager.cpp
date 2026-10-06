@@ -4,6 +4,7 @@
 #include "auth/GoogleDesktopLogin.h"
 #include "auth/PinManager.h"
 #include "auth/UserApi.h"
+#include "core/config/EditionPolicy.h"
 #include "core/logging/Logger.h"
 #include "network/http/HttpClient.h"
 #include "storage/repositories/LlmConfigRepository.h"
@@ -221,6 +222,11 @@ bool AuthManager::needs_pin_setup() const {
 // ── Initialize ───────────────────────────────────────────────────────────────
 
 void AuthManager::initialize() {
+    if (edition::is_local()) {
+        set_loading(false);
+        emit auth_state_changed();
+        return;
+    }
     set_loading(true);
     load_session();
 

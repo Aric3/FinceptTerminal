@@ -1,3 +1,5 @@
+#include "core/config/EditionPolicy.h"
+
 // src/ui/navigation/CommandBar.cpp
 //
 // Core: command/asset-type registries, search/scoring, ctor + styling,
@@ -392,6 +394,9 @@ void CommandBar::build_commands() {
          "",
          {"support", "ticket", "assistance"}},
     };
+    for (int i = commands_.size() - 1; i >= 0; --i)
+        if (!edition::allows_screen(commands_[i].id))
+            commands_.removeAt(i);
 }
 
 // ── asset type registry ──────────────────────────────────────────────────────
@@ -425,6 +430,8 @@ QVector<ScreenCommand> CommandBar::search(const QString& query) const {
     QVector<Scored> scored;
 
     for (const auto& cmd : commands_) {
+        if (!edition::allows_screen(cmd.id))
+            continue;
         int score = 0;
         for (const auto& alias : cmd.aliases)
             if (alias.toLower() == q) {

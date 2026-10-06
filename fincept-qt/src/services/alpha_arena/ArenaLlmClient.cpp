@@ -105,6 +105,14 @@ ArenaLlmResult ArenaLlmClient::parse_response(const QString& provider, const QBy
 
 void ArenaLlmClient::complete(const ArenaLlmRequest& req, std::function<void(ArenaLlmResult)> cb) {
     const QString p = req.provider.toLower();
+    if (ProviderCatalog::is_blocked(p, req.base_url)) {
+        QTimer::singleShot(0, this, [cb = std::move(cb)]() {
+            ArenaLlmResult result;
+            result.error = QStringLiteral("This provider is unavailable. Configure an independent LLM provider.");
+            cb(result);
+        });
+        return;
+    }
     QString url = ProviderCatalog::chat_endpoint(p, req.base_url, req.model_id);
     if (p == "fincept")
         url = fincept::AppConfig::instance().api_base_url() + "/research/chat";

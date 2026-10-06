@@ -3,6 +3,7 @@
 
 #include "core/config/AppPaths.h"
 #include "core/logging/Logger.h"
+#include "network/ProxyManager.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -52,7 +53,7 @@ QString PythonSetupManager::base_python_path() const {
 
     // `uv python find` spawns a process — resolve once per session.
     QProcess proc;
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    QProcessEnvironment env = network::ProxyManager::environment(QProcessEnvironment::systemEnvironment());
     env.insert("UV_PYTHON_INSTALL_DIR", install_dir() + "/python");
     proc.setProcessEnvironment(env);
     proc.start(uv_path(), {"python", "find", kPythonVersion});
@@ -155,7 +156,7 @@ bool PythonSetupManager::verify_packages_installed(const QString& venv_name, con
 
     // Run `uv pip list --python <venv_python>` — output is "name   version" per line.
     QProcess proc;
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    QProcessEnvironment env = network::ProxyManager::environment(QProcessEnvironment::systemEnvironment());
     env.insert("UV_PYTHON_INSTALL_DIR", install_dir() + "/python");
     proc.setProcessEnvironment(env);
 #ifdef _WIN32
@@ -945,8 +946,8 @@ static bool run_process(const QString& program, const QStringList& args, const Q
                         QString* stderr_out) {
     QProcess proc;
 
-    if (!env_vars.isEmpty()) {
-        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    {
+        QProcessEnvironment env = network::ProxyManager::environment(QProcessEnvironment::systemEnvironment());
         for (const auto& var : env_vars) {
             const int eq = var.indexOf('=');
             if (eq > 0)
@@ -1040,6 +1041,7 @@ QString PythonSetupManager::download_file(const QString& url, const QString& des
     QProcess proc;
     // --retry 3: automatic retry on transient network errors
     // --connect-timeout 30: fail fast if server unreachable
+    proc.setProcessEnvironment(network::ProxyManager::environment(QProcessEnvironment::systemEnvironment()));
     proc.start("curl", {"-L", "--fail", "--retry", "3", "--connect-timeout", "30", "-o", dest_path, url});
     if (!proc.waitForFinished(15 * 60 * 1000)) {
         proc.kill();

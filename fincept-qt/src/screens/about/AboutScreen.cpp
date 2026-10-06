@@ -1,6 +1,7 @@
 #include "screens/about/AboutScreen.h"
 
 #include "core/config/AppPaths.h"
+#include "core/config/EditionPolicy.h"
 #include "services/updater/UpdateService.h"
 #include "ui/theme/Theme.h"
 
@@ -275,7 +276,7 @@ AboutScreen::AboutScreen(QWidget* parent) : QWidget(parent) {
         // Enterprise — the separate closed-source product, not a licence for this build.
         // Fincept no longer sells a commercial licence for the open-source edition;
         // commercial, institutional and academic use is served by Enterprise instead.
-        {
+        if (!edition::is_local()) {
             auto* panel = makePanel();
             auto* pvl = new QVBoxLayout(panel);
             pvl->setContentsMargins(0, 0, 0, 0);
@@ -297,8 +298,8 @@ AboutScreen::AboutScreen(QWidget* parent) : QWidget(parent) {
             pvl->addWidget(body);
 
             // Footer link
-            auto* foot = makeLinkLabel(QStringLiteral("fincept.in/enterprise"),
-                                       QStringLiteral("https://fincept.in/enterprise"),
+            auto* foot =
+                makeLinkLabel(QStringLiteral("fincept.in/enterprise"), QStringLiteral("https://fincept.in/enterprise"),
                                        QString("color: %1; font-size: 11px; background: transparent; "
                                                "padding: 6px 14px; border-top: 1px solid %2; "
                                                "font-family: 'Consolas','Courier New',monospace;")
@@ -364,12 +365,12 @@ AboutScreen::AboutScreen(QWidget* parent) : QWidget(parent) {
         copy_info_btn_->setCursor(Qt::PointingHandCursor);
         copy_info_btn_->setToolTip(tr("Copy version and OS details to the clipboard for bug reports"));
         connect(copy_info_btn_, &QPushButton::clicked, this, [this]() {
-            const QString info = QStringLiteral("Fincept Terminal v%1\nQt: %2 (built with %3)\nOS: %4 (%5 %6)\n"
+            const QString info =
+                QStringLiteral("Fincept Terminal v%1\nQt: %2 (built with %3)\nOS: %4 (%5 %6)\n"
                                                 "CPU architecture: %7\nBuild ABI: %8\nLocale: %9")
                                      .arg(QApplication::applicationVersion(), QString::fromLatin1(qVersion()),
-                                          QStringLiteral(QT_VERSION_STR), QSysInfo::prettyProductName(),
-                                          QSysInfo::kernelType(), QSysInfo::kernelVersion(),
-                                          QSysInfo::currentCpuArchitecture(), QSysInfo::buildAbi(),
+                         QStringLiteral(QT_VERSION_STR), QSysInfo::prettyProductName(), QSysInfo::kernelType(),
+                         QSysInfo::kernelVersion(), QSysInfo::currentCpuArchitecture(), QSysInfo::buildAbi(),
                                           QLocale::system().name());
             if (auto* cb = QGuiApplication::clipboard())
                 cb->setText(info);
@@ -453,12 +454,19 @@ AboutScreen::AboutScreen(QWidget* parent) : QWidget(parent) {
             auto* btn = new QPushButton(links[i].label);
             btn->setStyleSheet(LINK_BTN());
             btn->setFixedHeight(36);
-            const QString url = links[i].url;
+            const QString url = edition::is_local() && i == 0
+                                    ? QStringLiteral("https://github.com/Aric3/FinceptTerminal")
+                                    : links[i].url;
             btn->setAccessibleName(links[i].label);
             btn->setToolTip(url);
             connect(btn, &QPushButton::clicked, this, [url]() { QDesktopServices::openUrl(QUrl(url)); });
-            grid->addWidget(btn, i / 3, i % 3);
+            if (!edition::is_local() || i != 2) {
+                const int slot = edition::is_local() && i > 2 ? i - 1 : i;
+                grid->addWidget(btn, slot / 3, slot % 3);
+            }
             resource_btns_.append(btn);
+            if (edition::is_local() && i == 2)
+                btn->hide();
         }
 
         pvl->addWidget(body);

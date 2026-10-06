@@ -1,6 +1,7 @@
 #include "ui/widgets/EnterprisePromo.h"
 
 #include "core/config/AppConfig.h"
+#include "core/config/EditionPolicy.h"
 #include "ui/theme/Theme.h"
 
 #include <QCheckBox>
@@ -146,8 +147,7 @@ UpgradeDialog::UpgradeDialog(QWidget* parent) : QDialog(parent) {
     // enterprise namespace. `this` stays as connect()'s context object (3rd
     // arg) for lifetime, but capturing it would be unused and Clang builds
     // with -Werror=unused-lambda-capture.
-    connect(compare_btn_, &QPushButton::clicked, this,
-            []() { enterprise::open_url(enterprise::comparison_url()); });
+    connect(compare_btn_, &QPushButton::clicked, this, []() { enterprise::open_url(enterprise::comparison_url()); });
     buttons->addWidget(compare_btn_);
 
     primary_btn_ = new QPushButton;
@@ -239,7 +239,7 @@ void UpgradeDialog::set_startup_prompt_enabled(bool enabled) {
 }
 
 void UpgradeDialog::show_now(QWidget* parent) {
-    if (ent_headless_platform())
+    if (edition::is_local() || ent_headless_platform())
         return;
     auto* dlg = new UpgradeDialog(parent);
     dlg->setAttribute(Qt::WA_DeleteOnClose);

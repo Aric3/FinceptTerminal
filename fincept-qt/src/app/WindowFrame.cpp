@@ -1,4 +1,4 @@
-﻿#include "app/WindowFrame.h"
+#include "app/WindowFrame.h"
 
 #include "app/DockScreenRouter.h"
 #include "app/MonitorPickerDialog.h"
@@ -9,6 +9,7 @@
 #include "auth/lock/LockOverlayController.h"
 #include "core/actions/ActionRegistry.h"
 #include "core/actions/builtin_actions.h"
+#include "core/config/EditionPolicy.h"
 #include "core/config/ProfileManager.h"
 #include "core/events/EventBus.h"
 #include "core/keys/KeyConfigManager.h"
@@ -353,7 +354,8 @@ WindowFrame::WindowFrame(int window_id, QWidget* parent, const WindowId& adopted
     // "user has cleared the PIN gate this session"; the per-window field is
     // a cache so on_auth_state_changed() can skip re-prompting.
     pin_gate_cleared_ = !auth::InactivityGuard::instance().is_terminal_locked() &&
-                        auth::AuthManager::instance().is_authenticated() && auth::PinManager::instance().has_pin();
+                        (edition::is_local() || auth::AuthManager::instance().is_authenticated()) &&
+                        auth::PinManager::instance().has_pin();
 
     auto* master_stack = new QStackedWidget;
 
@@ -363,7 +365,8 @@ WindowFrame::WindowFrame(int window_id, QWidget* parent, const WindowId& adopted
     master_stack->addWidget(auth_stack_);
 
     // ── Chat Mode ─────────────────────────────────────────────────────────────
-    chat_mode_screen_ = new chat_mode::ChatModeScreen;
+    if (!edition::is_local())
+        chat_mode_screen_ = new chat_mode::ChatModeScreen;
 
     // ── Lock Screen ─────────────────────────────────────────────────────────
     // Phase 1c lift: LockOverlayController owns LockScreen widgets. The
@@ -377,9 +380,10 @@ WindowFrame::WindowFrame(int window_id, QWidget* parent, const WindowId& adopted
     // ── ADS Docking mode ─────────────────────────────────────────────────────
     setup_docking_mode();
     master_stack->addWidget(dock_manager_->parentWidget()); // index 1 — dock_wrapper
-    master_stack->addWidget(chat_mode_screen_);             // index 2
+    master_stack->addWidget(chat_mode_screen_ ? static_cast<QWidget*>(chat_mode_screen_) : new QWidget);             // index 2
     master_stack->addWidget(lock_screen_);                  // index 3 — lock/PIN screen
-    connect(chat_mode_screen_, &chat_mode::ChatModeScreen::exit_requested, this, &WindowFrame::toggle_chat_mode);
+    if (chat_mode_screen_)
+        connect(chat_mode_screen_, &chat_mode::ChatModeScreen::exit_requested, this, &WindowFrame::toggle_chat_mode);
 
     // Lock screen signals
     connect(lock_screen_, &screens::LockScreen::unlocked, this, &WindowFrame::on_terminal_unlocked);
@@ -387,6 +391,9 @@ WindowFrame::WindowFrame(int window_id, QWidget* parent, const WindowId& adopted
         // Max PIN attempts exceeded — wipe the PIN (this is the ONLY path
         // that should clear it) and force a full re-login so the server
         // re-validates the user before they can configure a new PIN.
+        // A local PIN cannot be reset through cloud reauthentication.
+        if (edition::is_local())
+            return;
         auth::PinManager::instance().clear_pin();
         auth::AuthManager::instance().logout();
     });
@@ -616,7 +623,8 @@ WindowFrame::WindowFrame(int window_id, QWidget* parent, const WindowId& adopted
                 dock_router_->navigate(screen_id, exclusive);
                 auto* linked = dynamic_cast<IGroupLinked*>(dock_router_->screen_widget(screen_id));
                 if (!linked) {
-                    LOG_WARN("WindowFrame",
+                    LOG_WARN(
+                        "WindowFrame",
                              QString("nav.open_symbol: '%1' does not accept a symbol (no IGroupLinked)").arg(screen_id));
                     return;
                 }
@@ -1065,7 +1073,7 @@ WindowFrame::WindowFrame(int window_id, QWidget* parent, const WindowId& adopted
     // If dock layout was restored, the saved tabs are already visible.
     // Otherwise, navigate to dashboard as default.
     auto& auth_mgr = auth::AuthManager::instance();
-    if (auth_mgr.is_authenticated() || auth_mgr.is_loading()) {
+    if (edition::is_local() || auth_mgr.is_authenticated() || auth_mgr.is_loading()) {
         // If user is authenticated and has a PIN, show lock screen first —
         // UNLESS this is an additional window opened while an existing
         // window has already cleared the PIN gate this session.
@@ -1073,17 +1081,18 @@ WindowFrame::WindowFrame(int window_id, QWidget* parent, const WindowId& adopted
         // InactivityGuard flag (which is the single source of truth for
         // "is the terminal locked?"); skipping the prompt here just
         // mirrors the unlocked state into the new frame.
-        if (auth_mgr.is_authenticated() && auth::PinManager::instance().has_pin() && !pin_gate_cleared_) {
+        if ((edition::is_local() || auth_mgr.is_authenticated()) && auth::PinManager::instance().has_pin() &&
+            !pin_gate_cleared_) {
             LOG_INFO("WindowFrame", "Session restored — showing PIN unlock");
             lock_screen_->show_unlock();
             locked_ = true;
             set_shell_visible(false);
             stack_->setCurrentIndex(3);
-        } else if (auth_mgr.is_authenticated() && auth::PinManager::instance().has_pin()) {
+        } else if ((edition::is_local() || auth_mgr.is_authenticated()) && auth::PinManager::instance().has_pin()) {
             LOG_INFO("WindowFrame", "Session already unlocked — skipping PIN prompt for additional window");
             set_shell_visible(true);
             stack_->setCurrentIndex(1);
-        } else if (auth_mgr.is_authenticated()) {
+        } else if (edition::is_local() || auth_mgr.is_authenticated()) {
             // Authenticated but no PIN yet — will be caught by on_auth_state_changed
             on_auth_state_changed();
         } else {
@@ -1499,7 +1508,7 @@ void WindowFrame::changeEvent(QEvent* event) {
     // Only lock if the user opted in and we are actually in an authenticated
     // session with a configured PIN — otherwise there is nothing to lock.
     auto& auth = auth::AuthManager::instance();
-    if (!auth.is_authenticated() || !auth::PinManager::instance().has_pin())
+    if ((!edition::is_local() && !auth.is_authenticated()) || !auth::PinManager::instance().has_pin())
         return;
     auto r = SettingsRepository::instance().get("security.lock_on_minimize");
     const bool lock_on_min = r.is_ok() && r.value() == "true";

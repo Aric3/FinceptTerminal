@@ -9,6 +9,7 @@
 
 #include "app/DockScreenRouter.h"
 #include "app/WindowFrame.h"
+#include "core/config/EditionPolicy.h"
 #include "core/logging/Logger.h"
 #include "core/session/SessionManager.h"
 #include "screens/chat_mode/ChatModeScreen.h"
@@ -33,6 +34,10 @@ namespace fincept {
 void WindowFrame::toggle_chat_mode() {
     if (locked_)
         return;
+    if (edition::is_local()) {
+        dock_router_->navigate("ai_chat");
+        return;
+    }
     chat_mode_ = !chat_mode_;
 
     if (chat_mode_) {

@@ -1,4 +1,4 @@
-﻿#include "app/TerminalShell.h"
+#include "app/TerminalShell.h"
 
 #include "app/WindowFrame.h"
 #include "auth/AuthManager.h"
@@ -7,6 +7,7 @@
 #include "auth/lock/LockOverlayController.h"
 #include "core/actions/ActionRegistry.h"
 #include "core/actions/builtin_actions.h"
+#include "core/config/EditionPolicy.h"
 #include "core/config/ProfileManager.h"
 #include "core/layout/LayoutCatalog.h"
 #include "core/layout/WorkspaceShell.h"
@@ -311,6 +312,9 @@ void TerminalShell::bootstrap_auth() {
                 guard.set_timeout_minutes(minutes);
         }
     }
+
+    if (edition::is_local() && auth::PinManager::instance().has_pin())
+        auth::InactivityGuard::instance().set_terminal_locked(true);
 
     auth_bootstrapped_ = true;
     LOG_INFO(kShellTag, "Auth bootstrapped");

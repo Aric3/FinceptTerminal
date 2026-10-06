@@ -1,3 +1,5 @@
+#include "core/config/EditionPolicy.h"
+
 #include "ui/navigation/FKeyBar.h"
 
 #include "ui/theme/Theme.h"
@@ -28,6 +30,9 @@ TabBar::TabBar(QWidget* parent) : QWidget(parent) {
         {"node_editor", "NODES"},     {"code_editor", "CODE"},     {"ai_quant_lab", "QUANT LAB"},
         {"quantlib", "QUANTLIB"},     {"settings", "SETTINGS"},    {"profile", "PROFILE"},
     };
+    for (int i = tab_defs_.size() - 1; i >= 0; --i)
+        if (!edition::allows_screen(tab_defs_[i].id))
+            tab_defs_.removeAt(i);
     for (const auto& def : tab_defs_)
         add_tab(def);
     scroll_area->setWidget(container);

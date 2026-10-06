@@ -6,6 +6,7 @@
 // Part of the partial-class split of NewsService.cpp.
 
 #include "core/config/AppConfig.h"
+#include "core/config/EditionPolicy.h"
 #include "core/logging/Logger.h"
 #include "datahub/DataHub.h"
 #include "datahub/DataHubMetaTypes.h"
@@ -42,6 +43,9 @@ static constexpr int kWsReconnectMaxDelayMs = 300000;
 static constexpr int kNewsLiveMaxRetained = 3000;
 
 void NewsService::connect_live_feed(const QString& ws_url) {
+    if (edition::is_local() && (ws_url.isEmpty() || !edition::allows_url(QUrl(ws_url))))
+        return;
+
     if (live_ws_)
         return; // already connected
 
@@ -91,12 +95,11 @@ void NewsService::connect_live_feed(const QString& ws_url) {
         schedule_reconnect();
     });
 
-    connect(live_ws_, &QWebSocket::errorOccurred, this,
-            [this, epoch, schedule_reconnect](QAbstractSocket::SocketError) {
+    connect(
+        live_ws_, &QWebSocket::errorOccurred, this, [this, epoch, schedule_reconnect](QAbstractSocket::SocketError) {
                 if (epoch != live_epoch_)
                     return;
-                LOG_WARN("NewsService",
-                         "WebSocket live feed error: " + (live_ws_ ? live_ws_->errorString() : QString()));
+            LOG_WARN("NewsService", "WebSocket live feed error: " + (live_ws_ ? live_ws_->errorString() : QString()));
                 schedule_reconnect();
             });
 

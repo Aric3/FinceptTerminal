@@ -1,6 +1,7 @@
 #include "services/updater/UpdateService.h"
 
 #include "core/config/AppPaths.h"
+#include "core/config/EditionPolicy.h"
 #include "core/logging/Logger.h"
 #include "services/wallet/Ed25519Verifier.h"
 
@@ -148,6 +149,12 @@ bool UpdateService::is_newer(const QString& local, const QString& remote) {
 // ── Public entry point ──────────────────────────────────────────────────────
 
 void UpdateService::check_for_updates(bool silent) {
+    if (edition::is_local()) {
+        if (!silent)
+            QMessageBox::information(dialog_parent(), tr("Updates"),
+                                     tr("Updates for this local edition are not configured."));
+        return;
+    }
     if (in_progress_) {
         LOG_INFO("UpdateService", "Check already in progress — ignoring duplicate call");
         // A user-initiated check that lands on top of the silent startup check
@@ -226,8 +233,7 @@ void UpdateService::check_for_updates(bool silent) {
 // ── Manifest signature ──────────────────────────────────────────────────────
 
 QByteArray UpdateService::signing_public_key() {
-    const QByteArray hex =
-        QByteArray::fromRawData(UPDATE_SIGNING_PUBLIC_KEY_HEX,
+    const QByteArray hex = QByteArray::fromRawData(UPDATE_SIGNING_PUBLIC_KEY_HEX,
                                 static_cast<qsizetype>(qstrlen(UPDATE_SIGNING_PUBLIC_KEY_HEX)))
             .trimmed();
     if (hex.isEmpty())

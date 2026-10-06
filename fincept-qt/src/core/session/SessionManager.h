@@ -1,4 +1,6 @@
-﻿#pragma once
+#pragma once
+
+#include "core/config/EditionPolicy.h"
 #include <QElapsedTimer>
 #include <QList>
 #include <QObject>
@@ -92,7 +94,7 @@ class SessionManager : public QObject {
     QByteArray build_snapshot_payload_() const;
 
     QElapsedTimer elapsed_;
-    mutable QSettings settings_{"Fincept", "FinceptTerminal"};
+    mutable QSettings settings_{edition::organization(), edition::application()};
 };
 
 } // namespace fincept

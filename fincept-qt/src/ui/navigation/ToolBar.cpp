@@ -1,6 +1,7 @@
 #include "ui/navigation/ToolBar.h"
 
 #include "auth/AuthManager.h"
+#include "core/config/EditionPolicy.h"
 #include "ui/pushpins/PushpinBar.h"
 #include "ui/theme/Theme.h"
 #include "ui/theme/ThemeManager.h"
@@ -290,7 +291,7 @@ void ToolBar::apply_responsive_layout(int w) {
     bool show_subtitle = (w >= 1200);
     bool show_clock = (w >= 800);
     bool show_live = (w >= 800);
-    bool show_credits = (w >= 650);
+    bool show_credits = !edition::is_local() && (w >= 650);
     bool show_chat = (w >= 650);
 
     if (subtitle_label_)
@@ -320,6 +321,17 @@ void ToolBar::update_clock() {
 }
 
 void ToolBar::refresh_user_display() {
+    if (edition::is_local()) {
+        user_label_->setText(tr("LOCAL"));
+        user_label_->setToolTip(tr("Local workspace"));
+        credits_label_->hide();
+        plan_btn_->hide();
+        upgrade_btn_->hide();
+        logout_btn_->hide();
+        if (separators_.size() >= 7)
+            separators_[3]->hide();
+        return;
+    }
     const auto& s = auth::AuthManager::instance().session();
     if (!s.authenticated) {
         user_label_->setText("---");
@@ -410,6 +422,8 @@ QMenu* ToolBar::build_navigate_menu() {
     };
 
     auto nav = [this](QMenu* menu, const QString& label, const QString& id) {
+        if (!edition::allows_screen(id))
+            return;
         menu->addAction(label, this, [this, id]() { emit navigate_to(id); });
     };
 

@@ -2,6 +2,7 @@
 
 #include "auth/ConstantTime.h"
 #include "auth/SecurityAuditLog.h"
+#include "core/config/EditionPolicy.h"
 #include "core/logging/Logger.h"
 #include "storage/secure/SecureStorage.h"
 
@@ -317,7 +318,7 @@ bool PinManager::verify_pin(const QString& pin) {
         return false;
 
     // Check max attempts — require full re-auth
-    if (failed_attempts_ >= kMaxAttempts) {
+    if (!edition::is_local() && failed_attempts_ >= kMaxAttempts) {
         emit max_attempts_exceeded();
         return false;
     }
@@ -342,7 +343,7 @@ bool PinManager::verify_pin(const QString& pin) {
     // (lock_screen vs change_pin) so the audit reader can distinguish a
     // brute-force attempt at the lock screen from a legitimate user
     // fat-fingering their old PIN inside Settings → Change PIN.
-    failed_attempts_++;
+    failed_attempts_ = qMin(failed_attempts_, kMaxAttempts) + 1;
     const QString source = audit_source_change_pin_ ? "change_pin" : "lock_screen";
     LOG_WARN(
         "Auth",
@@ -350,6 +351,15 @@ bool PinManager::verify_pin(const QString& pin) {
     SecurityAuditLog::instance().record(
         "pin_verify_fail", QString("attempt=%1/%2 source=%3").arg(failed_attempts_).arg(kMaxAttempts).arg(source));
 
+    if (edition::is_local() && failed_attempts_ >= kMaxAttempts) {
+        // No cloud account can recover a local PIN. Retain the PIN and rate-limit
+        // further attempts for an hour instead of exposing a reset/bypass path.
+        lockout_until_ = QDateTime::currentDateTime().addSecs(3600);
+        save_lockout_state();
+        SecurityAuditLog::instance().record("lockout_started", QStringLiteral("seconds=3600"));
+        emit lockout_changed(true, 3600);
+        return false;
+    }
     if (failed_attempts_ >= kMaxAttempts) {
         // Permanent lockout — require server re-auth
         save_lockout_state();

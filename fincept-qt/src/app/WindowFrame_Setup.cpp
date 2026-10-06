@@ -1,3 +1,5 @@
+#include "core/config/EditionPolicy.h"
+
 // src/app/WindowFrame_Setup.cpp
 //
 // Initial setup helpers — auth stack, docking mode and dock-screen
@@ -92,6 +94,20 @@
 namespace fincept {
 
 void WindowFrame::setup_auth_screens() {
+    if (edition::is_local()) {
+        // Preserve stack indices used by the upstream shell without constructing
+        // account screens, which may initialize paid services in constructors.
+        for (int i = 0; i < 4; ++i)
+            auth_stack_->addWidget(new QWidget);
+        info_stack_ = new QStackedWidget;
+        info_stack_->addWidget(new screens::ContactScreen);
+        info_stack_->addWidget(new screens::TermsScreen);
+        info_stack_->addWidget(new screens::PrivacyScreen);
+        info_stack_->addWidget(new screens::TrademarksScreen);
+        info_stack_->addWidget(new screens::HelpScreen);
+        auth_stack_->addWidget(info_stack_);
+        return;
+    }
     auto* login = new screens::LoginScreen;
     auto* reg = new screens::RegisterScreen;
     auto* forgot = new screens::ForgotPasswordScreen;

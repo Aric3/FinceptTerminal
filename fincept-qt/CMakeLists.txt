@@ -35,6 +35,11 @@ endif()
 
 project(FinceptTerminal VERSION 4.5.0 LANGUAGES C CXX)
 
+option(FINCEPT_LOCAL_EDITION "Build the independent local workspace without official cloud services" ON)
+if(FINCEPT_LOCAL_EDITION)
+    add_compile_definitions(FINCEPT_LOCAL_EDITION)
+endif()
+
 # Strip C/C++ flags out of RC invocations — rc.exe only understands /D, /I, /fo.
 if(WIN32)
     set(CMAKE_RC_FLAGS "/nologo" CACHE STRING "" FORCE)
@@ -835,6 +840,8 @@ set(CORE_SOURCES
     src/core/actions/ActionRegistry.cpp
     src/core/actions/builtin_actions.cpp
     src/core/config/AppConfig.cpp
+    src/network/ProxyManager.cpp
+    src/screens/settings/NetworkSection.cpp
     src/core/config/AppPaths.cpp
     src/core/config/ProfileManager.cpp
     src/core/logging/Logger.cpp
@@ -2943,9 +2950,16 @@ qt6_add_lupdate(FinceptTerminal
 
 # ── macOS bundle properties ───────────────────────────────────────────────────
 if(APPLE)
+    if(FINCEPT_LOCAL_EDITION)
+        set(_FINCEPT_BUNDLE_ID "dev.aric.fincept.local")
+        set(_FINCEPT_BUNDLE_NAME "Fincept Local")
+    else()
+        set(_FINCEPT_BUNDLE_ID "com.fincept.terminal")
+        set(_FINCEPT_BUNDLE_NAME "Fincept Terminal")
+    endif()
     set_target_properties(FinceptTerminal PROPERTIES
-        MACOSX_BUNDLE_GUI_IDENTIFIER    "com.fincept.terminal"
-        MACOSX_BUNDLE_BUNDLE_NAME       "Fincept Terminal"
+        MACOSX_BUNDLE_GUI_IDENTIFIER    "${_FINCEPT_BUNDLE_ID}"
+        MACOSX_BUNDLE_BUNDLE_NAME       "${_FINCEPT_BUNDLE_NAME}"
         MACOSX_BUNDLE_BUNDLE_VERSION    "${CMAKE_PROJECT_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${CMAKE_PROJECT_VERSION}"
         MACOSX_BUNDLE_ICON_FILE         "fincept.icns"

@@ -141,3 +141,30 @@ endif()
 
 fincept_add_test(tst_proxy_manager tst_proxy_manager.cpp ../src/network/ProxyManager.cpp)
 target_link_libraries(tst_proxy_manager PRIVATE Qt6::Network)
+
+# macOS credential migration tests substitute only the OS Keychain boundary.
+# Database/SQLite/AES are real; fixtures use temporary databases and fake keys.
+if(APPLE)
+    fincept_add_test(tst_secure_storage
+        tst_secure_storage.cpp
+        ../src/storage/secure/SecureStorage.cpp
+        ../src/storage/sqlite/Database.cpp
+        ../src/storage/sqlite/migrations/MigrationRunner.cpp
+        ../src/core/logging/Logger.cpp)
+    target_link_libraries(tst_secure_storage PRIVATE Qt6::Sql OpenSSL::Crypto)
+endif()
+
+# Real Keychain writes require an explicit local opt-in. CI/default tests keep
+# the fake OS boundary above; this suite uses only its own new dummy item.
+option(FINCEPT_TEST_REAL_KEYCHAIN "Run isolated real macOS Keychain integration test" OFF)
+if(APPLE AND FINCEPT_TEST_REAL_KEYCHAIN)
+    fincept_add_test(tst_mac_keychain
+        tst_mac_keychain.cpp
+        ../src/storage/secure/SecureStorage.cpp
+        ../src/storage/secure/MacKeychain.cpp
+        ../src/storage/sqlite/Database.cpp
+        ../src/storage/sqlite/migrations/MigrationRunner.cpp
+        ../src/core/logging/Logger.cpp)
+    target_link_libraries(tst_mac_keychain PRIVATE Qt6::Sql OpenSSL::Crypto
+        "-framework Security" "-framework CoreFoundation")
+endif()

@@ -11,7 +11,12 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QSysInfo>
+#include <QUuid>
 #include <QVector>
+
+#ifdef Q_OS_MACOS
+#    include "storage/secure/MacKeychain.h"
+#endif
 
 #include <openssl/err.h>
 #include <openssl/evp.h>
@@ -40,12 +45,12 @@
 //              the user's Windows profile and is itself protected by their
 //              logon credentials. This is the meaningful control: the DB file
 //              alone is useless, and *another local user cannot decrypt it*.
+//   macOS    — login Keychain stores the DEK; SQLite stores only its random ID.
 //   Other    — PBKDF2-HMAC-SHA256 over the machine-local seed with a random
 //              per-install salt. Note honestly that the seed (machine ID) is
 //              readable by any local process, so the iteration count is a
 //              speed bump against offline DB theft, not a defence against a
-//              local attacker. Wiring macOS Keychain / libsecret in here is
-//              the real fix on those platforms.
+//              local attacker. Linux libsecret support remains future work.
 //
 // Why the indirection: it decouples "what encrypts the rows" from "what the
 // platform can protect", so the KEK can be rotated (or upgraded to Keychain)
@@ -78,7 +83,8 @@ constexpr const char* kAppSalt = "fincept-terminal/secure-storage/v1";
 
 // Reserved rows holding the wrapped DEK. Never returned to callers.
 constexpr const char* kDekPrefix = "__fincept_dek_v2";
-constexpr const char* kDekDpapi = "__fincept_dek_v2_dpapi";
+[[maybe_unused]] constexpr const char* kDekKeychain = "__fincept_dek_v2_keychain";
+[[maybe_unused]] constexpr const char* kDekDpapi = "__fincept_dek_v2_dpapi";
 constexpr const char* kDekPbkdf2 = "__fincept_dek_v2_pbkdf2";
 
 bool is_reserved_key(const QString& key) {
@@ -269,15 +275,12 @@ struct WrappedRow {
     QByteArray tag;
 };
 
-// Placeholders for schemes that carry their own integrity (DPAPI) and so have
+// Placeholders for platform schemes (DPAPI/Keychain) that need no AES wrapper and have
 // no separate iv/tag. The columns are declared NOT NULL and a *default
 // constructed* QByteArray binds as SQL NULL — which fails the insert and
 // silently demotes us to the weaker wrapping scheme. Always bind real bytes.
 //
-// [[maybe_unused]]: every caller sits inside an `#ifdef Q_OS_WIN` block (DPAPI
-// is Windows-only), so on Linux/macOS these are dead and -Wunused-function
-// fires — which is -Werror on those CI legs. MSVC never sees it because there
-// they *are* called. Same for drop_row() below.
+// These helpers are unused on platforms that only use PBKDF2 wrapping.
 [[maybe_unused]] QByteArray unused_iv() {
     return QByteArray(kIvLen, '\0');
 }
@@ -286,7 +289,7 @@ struct WrappedRow {
 }
 
 // PBKDF2 scheme: ciphertext = salt(16) || wrapped_dek, iv = GCM nonce, tag = GCM tag.
-bool pbkdf2_wrap(const QByteArray& dek, WrappedRow& out) {
+[[maybe_unused]] bool pbkdf2_wrap(const QByteArray& dek, WrappedRow& out) {
     const QByteArray salt = random_bytes(kSaltLen);
     const QByteArray iv = random_bytes(kIvLen);
     if (salt.isEmpty() || iv.isEmpty())
@@ -358,8 +361,7 @@ bool write_wrapped_row(QSqlDatabase conn, const WrappedRow& row) {
     return true;
 }
 
-// Only reachable from the DPAPI upgrade/retire paths, which are Q_OS_WIN-gated
-// — see the note on unused_iv() above.
+// Used when retiring a machine-derived wrapper after platform migration.
 [[maybe_unused]] bool drop_row(QSqlDatabase conn, const char* key) {
     QSqlQuery q(conn);
     q.prepare("DELETE FROM secure_credentials WHERE key = ?");
@@ -388,10 +390,8 @@ void upgrade_wrapping_to_dpapi(QSqlDatabase conn, const QByteArray& dek) {
 }
 #endif
 
-// Re-encrypt every credential row from `from_key` to `to_key`. Rows that fail
-// to decrypt are left untouched — they were already unreadable (profile copied
-// from another machine), and destroying them would lose nothing but would make
-// the failure harder to diagnose.
+// Re-encrypt legacy rows transactionally. An unreadable row aborts migration;
+// replacing its key would strand the ciphertext and prevent later recovery.
 bool reencrypt_rows(QSqlDatabase conn, const QByteArray& from_key, const QByteArray& to_key, int& migrated_out) {
     QVector<WrappedRow> rows;
     {
@@ -412,8 +412,10 @@ bool reencrypt_rows(QSqlDatabase conn, const QByteArray& from_key, const QByteAr
     for (const WrappedRow& r : rows) {
         bool ok = false;
         const QByteArray plaintext = aes_gcm_decrypt(from_key, r.iv, r.ciphertext, r.tag, ok);
-        if (!ok)
-            continue;
+        if (!ok) {
+            LOG_ERROR(TAG, "Unreadable legacy credential; refusing migration");
+            return false;
+        }
 
         const QByteArray iv = random_bytes(kIvLen);
         if (iv.isEmpty())
@@ -438,6 +440,39 @@ bool reencrypt_rows(QSqlDatabase conn, const QByteArray& from_key, const QByteAr
     return true;
 }
 
+#ifdef Q_OS_MACOS
+// Write/read-back Keychain first. Commit the reference and removal of the weaker
+// wrapper together. A DB failure keeps the old key and ciphertext recoverable.
+QByteArray persist_keychain_dek(QSqlDatabase conn, const QByteArray& dek, bool migrate_legacy) {
+    const QString account = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const auto added = mac_keychain::add(account, dek);
+    if (added.is_err()) {
+        LOG_ERROR(TAG, QString::fromStdString(added.error()));
+        return {};
+    }
+    const auto verified = mac_keychain::read(account);
+    auto& db = Database::instance();
+    if (verified.is_err() || verified.value() != dek || db.begin_transaction().is_err()) {
+        (void)mac_keychain::remove(account);
+        LOG_ERROR(TAG, "Keychain key could not be verified; database unchanged");
+        return {};
+    }
+    int migrated = 0;
+    bool ok = !migrate_legacy || reencrypt_rows(conn, legacy_key(), dek, migrated);
+    ok =
+        ok && write_wrapped_row(conn, {QString::fromLatin1(kDekKeychain), account.toUtf8(), unused_iv(), unused_tag()});
+    ok = ok && drop_row(conn, kDekPbkdf2);
+    if (!ok || db.commit().is_err()) {
+        (void)db.rollback();
+        (void)mac_keychain::remove(account);
+        LOG_ERROR(TAG, "Keychain migration failed; database unchanged");
+        return {};
+    }
+    LOG_INFO(TAG, "Credential key protected by macOS Keychain");
+    return dek;
+}
+#endif
+
 // Load the DEK, creating (and migrating to) one on first run. Returns an empty
 // QByteArray if the store is unusable; callers must treat that as an error.
 QByteArray load_or_create_dek() {
@@ -445,6 +480,24 @@ QByteArray load_or_create_dek() {
     QSqlDatabase conn = db.connection();
 
     // 1. Try the platform-preferred wrapped DEK.
+#ifdef Q_OS_MACOS
+    {
+        WrappedRow row;
+        if (read_wrapped_row(conn, kDekKeychain, row)) {
+            const QString account = QString::fromUtf8(row.ciphertext);
+            if (QUuid(account).isNull()) {
+                LOG_ERROR(TAG, "Invalid Keychain reference; refusing to replace credential key");
+                return {};
+            }
+            const auto result = mac_keychain::read(account);
+            if (result.is_err()) {
+                LOG_ERROR(TAG, QString::fromStdString(result.error()));
+                return {}; // Never recreate or fall back after missing/denied access.
+            }
+            return result.value();
+        }
+    }
+#endif
 #ifdef Q_OS_WIN
     {
         WrappedRow row;
@@ -469,18 +522,26 @@ QByteArray load_or_create_dek() {
 #ifdef Q_OS_WIN
                 upgrade_wrapping_to_dpapi(conn, dek);
 #endif
+#ifdef Q_OS_MACOS
+                return persist_keychain_dek(conn, dek, false);
+#else
                 return dek;
+#endif
             }
             LOG_ERROR(TAG, "Stored DEK failed PBKDF2 unwrap — stored credentials are unreadable "
                            "on this machine and must be re-entered");
+            return {}; // Never overwrite an existing unreadable key.
         }
     }
 
-    // 2. No usable DEK — create one and migrate any legacy rows under it.
+    // 2. No existing DEK — create one and migrate legacy rows transactionally.
     const QByteArray dek = random_bytes(kKeyLen);
     if (dek.isEmpty())
         return {};
 
+#ifdef Q_OS_MACOS
+    return persist_keychain_dek(conn, dek, true);
+#else
     if (db.begin_transaction().is_err()) {
         LOG_ERROR(TAG, "Could not open a transaction for DEK creation");
         return {};
@@ -490,13 +551,13 @@ QByteArray load_or_create_dek() {
     bool ok = reencrypt_rows(conn, legacy_key(), dek, migrated);
     if (ok) {
         bool wrote = false;
-#ifdef Q_OS_WIN
+#    ifdef Q_OS_WIN
         QByteArray blob;
         if (dpapi_wrap(dek, blob))
             wrote = write_wrapped_row(conn, {QString::fromLatin1(kDekDpapi), blob, unused_iv(), unused_tag()});
         if (!wrote)
             LOG_WARN(TAG, "DPAPI wrap unavailable — falling back to PBKDF2-wrapped DEK");
-#endif
+#    endif
         if (!wrote) {
             WrappedRow row;
             wrote = pbkdf2_wrap(dek, row) && write_wrapped_row(conn, row);
@@ -517,19 +578,22 @@ QByteArray load_or_create_dek() {
 
     LOG_INFO(TAG, QString("Initialised wrapped credential key (%1 legacy row(s) re-encrypted)").arg(migrated));
     return dek;
+#endif
 }
 
-// Derive once and cache. Called under QMutex so the first caller wins;
-// subsequent calls return the cached buffer without touching the DB.
-const QByteArray& data_key() {
+// Cache successful loads per database, protected against concurrent callers.
+// Startup explicitly reloads; transient failures are never cached.
+QByteArray data_key(bool reload = false) {
     static QMutex m;
     static QByteArray cached;
-    static bool attempted = false;
+    static QString cached_path;
     QMutexLocker lock(&m);
-    if (!cached.isEmpty() || attempted)
+    const QString path = Database::instance().path();
+    if (!reload && !cached.isEmpty() && cached_path == path)
         return cached;
-    attempted = true;
-    cached = load_or_create_dek();
+    cached.clear();
+    cached_path = path;
+    cached = load_or_create_dek(); // Retry transient failures; isolate profile keys.
     return cached;
 }
 
@@ -538,6 +602,15 @@ const QByteArray& data_key() {
 SecureStorage& SecureStorage::instance() {
     static SecureStorage s;
     return s;
+}
+
+Result<void> SecureStorage::initialize() {
+    if (!Database::instance().is_open())
+        return Result<void>::err("Database not open");
+    if (data_key(true).size() != kKeyLen)
+        return Result<void>::err("Credential key unavailable. On macOS, unlock the login Keychain and grant this "
+                                 "application access before restarting. Existing credentials have been preserved.");
+    return Result<void>::ok();
 }
 
 Result<void> SecureStorage::store(const QString& key, const QString& value) {

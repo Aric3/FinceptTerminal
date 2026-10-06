@@ -1,7 +1,7 @@
 # 本地维护版改造评估与实施决策
 
 评估日期：2026-10-06。源码基线：Aric3/FinceptTerminal，main，3f444cb7ab712d85a57d270d5edd6e7a2ef50d55。
-本文件是实施方案；除新增本文件外，本轮未修改应用代码。此前已验证原版编译、首次 Python 初始化，以及默认分析环境中的 AAPL/MSFT 公开行情脚本请求。
+前半部分保留首次评估与实施路线；各轮已完成内容和验证结果记录在文末。评估时已验证原版编译、首次 Python 初始化，以及默认分析环境中的 AAPL/MSFT 公开行情脚本请求。
 
 ## 产品目标
 
@@ -129,3 +129,21 @@ Python 依赖分为核心行情、回测、ML/AI、特殊交易平台等功能�
 
 
 退出回归补充：原生 Command-Q 暴露了上游 `lastWindowClosed` 同步调用 `quit()` 的 macOS 重入问题。已将该连接改为 `Qt::QueuedConnection`；修复版实际 Command-Q 后写入 clean-shutdown 标记，主进程退出，未产生新的崩溃报告。宏观日历保留精确 topic 的生产者注册，官方请求仍在 HttpClient 发送前拒绝，使组件立即收到不可用错误而非等待通用生产者超时。
+
+
+## P1：macOS Keychain（2026-10-06）
+
+安装密钥现存放在 macOS login Keychain；每个数据库使用独立的随机账户 ID，SQLite 仅保存引用和 AES-GCM 密文。旧 PBKDF2 包装先解密、写入 Keychain 并读回校验，然后在同一 SQLite 事务中写引用、移除弱包装；已有凭据密文不变。更早的直接机器密钥存储在事务中重新加密；任何无法解密的旧行都会中止迁移。
+
+Keychain 拒绝访问、缺失密钥、旧包装损坏、SQL 写入失败均保留原有数据，不降级或生成替代密钥覆盖旧内容。启动时先初始化凭据保护，再加载 PIN/账户；失败时显示错误并退出，避免将读不到的 PIN 当作未设置。失败可重试，缓存按数据库路径隔离。
+
+本机签名仍为 ad-hoc；首次使用或重新编译后，macOS 可能要求允许应用访问 Keychain。应按系统提示授权本应用自己的条目，不设置任何应用均可访问。OS 锁屏不会清除应用已经读入内存的密钥；应用 PIN/自动锁仍由原有模块负责。数据库文件本身不包含 Keychain 密钥，单独复制 DB 不能迁移凭据；数据备份与密钥迁移需另做显式流程。迁移后不要直接启动此前不识别 Keychain 的旧构建；代码降级需要配套的密钥迁移方案。
+
+验证：独立假凭据测试覆盖 12 项行为（Qt Test 共 14 项含初始化/清理），包括旧包装与旧行迁移、空值、拒绝访问与重试、Keychain 读回失败、SQL 插入/删除回滚、损坏密钥、缺失 Keychain 及 profile 隔离。真实 Keychain 接口另用随机 UUID 和公开假值验证新增、读取、拒绝覆盖、删除；测试条目已清理，未读取用户已有条目。完整应用构建通过。数据源能力标记、依赖分组和自建服务替换仍待后续实施。
+
+接口依据：[Apple Keychain 实现说明](https://developer.apple.com/documentation/technotes/tn3137-on-mac-keychains)、[SecItemCopyMatching](https://developer.apple.com/documentation/security/secitemcopymatching(_:_:))。
+
+
+本轮交付：更新后的原生应用已安装至 `~/Applications/Fincept Local.app`，签名校验通过。全套 8/8 测试通过，其中真实 Keychain 集成测试为显式启用项，默认关闭；它只访问临时数据库与自身新建的假条目，包含重新加载、解密、拒绝覆盖及缺失密钥拒绝访问，测试条目已删除。用户既有工作区未自动启动；真实凭据将于下次正常打开应用时按上述事务流程迁移。
+
+可重复验证：开发环境执行 `dev configure -DFINCEPT_BUILD_TESTS=ON`、`dev build`，再用 SDK 中的 `ctest --test-dir <build> --output-on-failure`。只有主动测试真实 Keychain 时才增加 `-DFINCEPT_TEST_REAL_KEYCHAIN=ON`；完成后恢复 OFF，日常测试不操作系统 Keychain。原生包启动的 profile 测试因会改写真实 `profiles.json` 未执行，采用真实 Keychain + 纯临时 SQLite 的集成测试替代。

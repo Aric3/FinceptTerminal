@@ -3247,8 +3247,13 @@ else()
 endif()
 # SecureStorage stores credentials as SQLite + AES-256-GCM (OpenSSL) on every
 # platform. The row key is a random DEK wrapped by a platform key: DPAPI on
-# Windows (crypt32, below), PBKDF2 over the machine seed elsewhere. See
+# Windows (crypt32, below), Keychain on macOS, PBKDF2 elsewhere. See
 # storage/secure/SecureStorage.cpp.
+
+if(APPLE)
+    target_sources(FinceptTerminal PRIVATE src/storage/secure/MacKeychain.cpp)
+    target_link_libraries(FinceptTerminal PRIVATE "-framework Security" "-framework CoreFoundation")
+endif()
 
 # Windows: dbghelp for the crash-handler minidump writer (see
 # src/core/crash/CrashHandler.cpp); crypt32 for the DPAPI

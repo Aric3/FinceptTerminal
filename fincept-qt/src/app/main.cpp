@@ -93,6 +93,7 @@
 #include "storage/StorageManager.h"
 #include "storage/repositories/NewsArticleRepository.h"
 #include "storage/repositories/SettingsRepository.h"
+#include "storage/secure/SecureStorage.h"
 #include "storage/sqlite/CacheDatabase.h"
 #include "storage/sqlite/Database.h"
 #include "storage/sqlite/migrations/MigrationRunner.h"
@@ -882,6 +883,13 @@ int main(int argc, char* argv[]) {
         // defaults so the UI is at least styled.
         fincept::ui::apply_global_stylesheet();
     } else {
+        auto credentials = fincept::SecureStorage::instance().initialize();
+        if (credentials.is_err()) {
+            QMessageBox::critical(nullptr, QObject::tr("Credential storage unavailable"),
+                                  QString::fromStdString(credentials.error()));
+            fincept::TerminalShell::instance().shutdown();
+            return 1; // An unreadable PIN must never be treated as an unset PIN.
+        }
         // Load broker accounts now that the DB is open. The AccountManager
         // singleton loads eagerly in its constructor on first access; if anything
         // touched it before this point (before open()), it found an unusable DB

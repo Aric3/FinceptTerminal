@@ -169,3 +169,46 @@ FINCEPT_COCOA_PLUGIN="$FINCEPT_DEV_ROOT/packages/cocoa-build/plugins/platforms/l
 ```
 
 本机最终验证：已安装到 `/Users/ac/Applications/Fincept Local.app`。实际行情页 9 个面板均有数据，切换页面后正常显示；第二次启动后读取到 270 个单元格、无 `LOADING`。两次 Command-Q 均无新崩溃报告，第二次受控进程退出码 0。原生应用已重新打开。少量 Yahoo 无行情的代码（如 `LBS=F`、`UNI-USD`）仍会返回上游数据错误，不代表整个应用离线。
+
+
+## 功能验收第一轮（2026-10-06）
+
+本轮从 `WindowFrame_Setup.cpp` 的注册表提取全部 52 个页面，记录在
+`docs/LOCAL_FUNCTION_ACCEPTANCE.csv`。状态区分部分通过、待验收、待配置、官方后端缺失及本地版停用。
+没有把页面构建成功当作业务功能正常，也没有把单元测试通过当作整页通过。
+尚未逐个运行所有页面；待验收项明确保留。CSV 是本次检查快照，后续实现变更须更新。
+
+实际界面：新闻有 824 篇文章、694 个簇、48 个来源、53 feeds；这些数量不证明所有文章新鲜或所有来源联网成功。
+组合页正确显示新建/导入 JSON/加载演示的空工作区，没有向用户数据库写演示持仓。
+本轮后续界面检查被系统锁屏暂停；已请求用户解锁。
+此前行情加载、快速切换和实际退出的证据见上一节；本轮未重测退出。
+
+新增 `tst_feed_parsing` 复用已有 FeedSelfTest，直接测试真实 RSS/Atom/JSON/CSV 解析与时间处理，
+无需启动应用、联网、用户数据库或 Keychain。构建成功，CTest **9/9** 通过。
+测试涵盖代理路径、本地政策、凭据迁移、DataHub 刷新、指标、订单验证及解析等关键边界；
+不覆盖组合收益正确性、历史K线、策略回测、独立LLM及交易平台连接。
+
+### 自动化接口核实与实施决定
+
+当前有 `--dump-tools`、`--selftest-*` 和 `--smoke-test`；它们是应用诊断/自测入口，
+在常规启动初始化之后处理，不是稳定的业务 CLI。`--smoke-test` 主要测试页面构建。
+Python `yfinance_data.py` 有 quote/search/historical 等 JSON 命令，但直接运行绕过应用的服务及代理配置，
+不能作为本机应用联网通过的证据。
+
+内部 `TerminalMcpBridge` 提供 loopback HTTP `GET /tools` 和 `POST /tool`，随机端口，
+每次运行令牌及额外的破坏性操作许可。现有 AgentService 用它调用工具。
+这不是可直接配置给外部客户端的标准 MCP 传输；也尚无外部客户端的端口发现、令牌交接和生命周期接口。
+外部 MCP 服务器不是分析工作的前置条件。当前可通过界面、受控脚本或现有数据源完成读取和分析；
+要让 Codex 稳定调用应用，应复用内部服务工具，并先建设小型 JSON CLI，再加标准 MCP 适配层。
+
+接入前缺陷：`ThreadHelper.h::run_async_wait` 有超时，部分调用者仍把结果写入栈变量。
+`MarketsTools.cpp` 的 quote/history 回调捕获 `&ok`、`&q` / `&points`；若回调晚于超时返回，存在失效引用风险。
+这来自源码检查，尚未做故障注入复现；不能仅因超时为120秒而接受。
+应为所有异步工具审核生命周期、线程同步和取消机制，并增加迟到回调的回归测试后再开放接口。
+
+下一批按依赖排序：
+1. 核心闭环：有效代码报价→历史K线→临时组合CRUD/导入导出→确定性收益与回测→独立LLM。
+2. 数据能力提示：把官方后端缺失、缺API key、缺Python包、上游限流区分显示；优先替代宏观日历/QuantLib。
+3. 修复异步工具生命周期，再实现只读 CLI 首批命令：doctor、quote、history、news、portfolio list/holdings。
+   命令名为拟定接口，尚未实现；要求 JSON 输出、来源及时间、错误分类、进程超时，不打印凭据。
+4. 标准 MCP 适配器调用同一命令/服务；不重复建立数据抓取与计算逻辑。写操作和交易不纳入首批。

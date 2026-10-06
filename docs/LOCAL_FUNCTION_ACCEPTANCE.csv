@@ -1,0 +1,53 @@
+screen_id,status,dependency,evidence,next_check,source
+dashboard,部分通过,混合行情/新闻/官方日历,先前行情与新闻有数据；官方日历无本地替代,刷新/离线/错误恢复,fincept-qt/src/services/markets/MarketDataService.cpp
+markets,部分通过,Python yfinance / Yahoo,先前9面板、270单元格加载；快速切换通过,逐项刷新/历史数据/有效代码校验,fincept-qt/src/services/markets/MarketDataService.cpp
+crypto_trading,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+news,部分通过,公开RSS；部分分析依赖官方API,本轮824文章/694簇/48来源/53feeds；解析测试通过,搜索/过滤/导出；核验文章时效,fincept-qt/src/services/news/NewsService_Feeds.cpp
+forum,本地版停用,官方账户/社区/服务,EditionPolicy显式停用,旧布局显示不可用提示,fincept-qt/src/core/config/EditionPolicy.h
+watchlist,待验收,SQLite；行情服务,只读代码检查,临时数据库增删/重复代码/重启持久化,fincept-qt/src/storage/repositories/WatchlistRepository.cpp
+report_builder,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+profile,本地版停用,官方账户/社区/服务,EditionPolicy显式停用,旧布局显示不可用提示,fincept-qt/src/core/config/EditionPolicy.h
+settings,部分通过,QSettings / Keychain / ProxyManager,先前代理保存/真实转发及凭据迁移通过,配置能力提示/其他设置持久化,fincept-qt/src/network/ProxyManager.cpp
+about,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+support,本地版停用,官方账户/社区/服务,EditionPolicy显式停用,旧布局显示不可用提示,fincept-qt/src/core/config/EditionPolicy.h
+notes,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+portfolio,部分通过,SQLite；行情及Python分析,本轮空工作区正确显示；未创建测试持仓,临时数据库CRUD/持久化/导入导出/收益计算,fincept-qt/src/storage/repositories/PortfolioRepository.cpp
+ai_chat,待配置,用户自己的LLM提供商,独立提供商需自行配置；不算联网失败,连接检查/聊天/流式响应/工具调用/取消,fincept-qt/src/services/llm/ProviderCatalog.cpp
+backtesting,待验收,Python各回测provider,已确认脚本调度及命令映射,固定历史数据/已知策略/收益与手续费核对,fincept-qt/src/services/backtesting/BacktestingService.cpp
+algo_trading,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+node_editor,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+code_editor,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+ai_quant_lab,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+quantlib,官方后端缺失,AppConfig API /quantlib,默认官方地址被本地政策阻止；需本地或自建替代,梳理所需计算并选择本地实现,fincept-qt/src/services/quantlib/QuantLibClient.cpp
+economics,待验收,Python多数据源；部分需API key,已确认Python脚本调度；非全部依赖官方,按FRED/DBnomics等来源单独验证,fincept-qt/src/services/economics/EconomicsService.cpp
+crypto_center,本地版停用,官方账户/社区/服务,EditionPolicy显式停用,旧布局显示不可用提示,fincept-qt/src/core/config/EditionPolicy.h
+gov_data,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+dbnomics,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+akshare,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+asia_markets,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+relationship_map,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+equity_trading,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+alpha_arena,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+polymarket,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+derivatives,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+fno,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+equity_research,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+screener,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+ma_analytics,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+alt_investments,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+geopolitics,官方后端缺失,AppConfig API /research/news-events,主事件服务默认依赖官方API；不代表页面所有辅助功能,替代事件源/能力提示,fincept-qt/src/services/geopolitics/GeopoliticsService.cpp
+maritime,官方后端缺失,AppConfig API /marine；辅助地理服务,主海事服务默认依赖官方API；不代表全部地图能力,明确数据来源和替代方案,fincept-qt/src/services/maritime/MaritimeService.cpp
+surface_analytics,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+agent_config,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+mcp_servers,待验收,外部MCP连接管理,该页面用于接入外部工具；不是向Codex提供本软件的标准MCP服务器,连接/列工具/超时/断开；独立测试环境,fincept-qt/src/mcp/TerminalMcpBridge.cpp
+data_mapping,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+data_sources,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+file_manager,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+excel,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+trade_viz,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+docs,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+contact,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+terms,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+privacy,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+trademarks,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+help,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp

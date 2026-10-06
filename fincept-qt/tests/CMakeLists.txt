@@ -174,3 +174,11 @@ fincept_add_test(tst_datahub_refresh
     ../src/datahub/DataHub.cpp
     ../src/core/logging/Logger.cpp)
 target_link_libraries(tst_datahub_refresh PRIVATE Qt6::Widgets)
+
+# Exercise the existing canned RSS/Atom/JSON/CSV checks without booting the app,
+# opening a user database, or making network requests.
+fincept_add_test(tst_feed_parsing
+    tst_feed_parsing.cpp
+    ../src/services/feeds/FeedSelfTest.cpp
+    ../src/services/feeds/FeedScraper.cpp
+    ../src/services/feeds/FeedParseUtil.cpp)

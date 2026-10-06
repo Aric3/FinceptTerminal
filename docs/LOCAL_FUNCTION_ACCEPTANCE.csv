@@ -2,7 +2,7 @@ screen_id,status,dependency,evidence,next_check,source
 dashboard,部分通过,混合行情/新闻/官方日历,先前行情与新闻有数据；官方日历无本地替代,刷新/离线/错误恢复,fincept-qt/src/services/markets/MarketDataService.cpp
 markets,部分通过,Python yfinance / Yahoo,先前9面板、270单元格加载；快速切换通过,逐项刷新/历史数据/有效代码校验,fincept-qt/src/services/markets/MarketDataService.cpp
 crypto_trading,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
-news,部分通过,公开RSS；部分分析依赖官方API,本轮824文章/694簇/48来源/53feeds；解析测试通过,搜索/过滤/导出；核验文章时效,fincept-qt/src/services/news/NewsService_Feeds.cpp
+news,部分通过,公开RSS；部分分析依赖官方API,实际列表824→833文章；Nobel搜索14条；无匹配0条；清空恢复；解析测试通过,修复无匹配时误提示断网；OFFLINE应区分官方实时流与RSS；分类/导出待验收,fincept-qt/src/services/news/NewsService_Feeds.cpp
 forum,本地版停用,官方账户/社区/服务,EditionPolicy显式停用,旧布局显示不可用提示,fincept-qt/src/core/config/EditionPolicy.h
 watchlist,待验收,SQLite；行情服务,只读代码检查,临时数据库增删/重复代码/重启持久化,fincept-qt/src/storage/repositories/WatchlistRepository.cpp
 report_builder,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
@@ -12,8 +12,8 @@ about,待验收,待追踪,已登记页面工厂；没有功能通过证据,确�
 support,本地版停用,官方账户/社区/服务,EditionPolicy显式停用,旧布局显示不可用提示,fincept-qt/src/core/config/EditionPolicy.h
 notes,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
 portfolio,部分通过,SQLite；行情及Python分析,本轮空工作区正确显示；未创建测试持仓,临时数据库CRUD/持久化/导入导出/收益计算,fincept-qt/src/storage/repositories/PortfolioRepository.cpp
-ai_chat,待配置,用户自己的LLM提供商,独立提供商需自行配置；不算联网失败,连接检查/聊天/流式响应/工具调用/取消,fincept-qt/src/services/llm/ProviderCatalog.cpp
-backtesting,待验收,Python各回测provider,已确认脚本调度及命令映射,固定历史数据/已知策略/收益与手续费核对,fincept-qt/src/services/backtesting/BacktestingService.cpp
+ai_chat,待配置,用户自己的LLM提供商,解锁后实际页面显示无提供商、无模型；未发送聊天或读取密钥,用户配置独立提供商后验证连接/流式响应/取消/工具调用,fincept-qt/src/services/llm/ProviderCatalog.cpp
+backtesting,部分通过,Python各回测provider,实际VectorBT/SPY日线SMA10/20 completed；250条权益/8笔交易；Yahoo非模拟；曲线和JSON导出通过；资本/收益/回撤/手续费/胜率一致,保存目录默认根目录需改进；固定数据策略正确性/自定义参数/其他5引擎/失败恢复,fincept-qt/src/services/backtesting/BacktestingService.cpp
 algo_trading,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
 node_editor,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
 code_editor,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
@@ -26,12 +26,12 @@ dbnomics,待验收,待追踪,已登记页面工厂；没有功能通过证据,�
 akshare,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
 asia_markets,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
 relationship_map,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
-equity_trading,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+equity_trading,待验收,券商账户 / DataStreamManager / SQLite模拟交易,页面显示默认RELIANCE/NSE；报价空；源码无聚焦账户不订阅行情，账户配置尚未进一步核查,能力提示；配置后验收读取报价与K线；不执行真实下单,fincept-qt/src/screens/equity_trading/EquityTradingScreen_Streams.cpp
 alpha_arena,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
 polymarket,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
 derivatives,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
 fno,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
-equity_research,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
+equity_research,部分通过,Python yfinance / Yahoo；本地缓存,实际AAPL报价/公司信息/1Y与1M日K/利润表已加载；未独立核对外部原始价格,历史CSV导出/换代码/多周期/错误恢复；报表数值格式与计算验证,fincept-qt/src/services/equity/EquityResearchService.cpp
 screener,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
 ma_analytics,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp
 alt_investments,待验收,待追踪,已登记页面工厂；没有功能通过证据,确认数据源/凭据/依赖；隔离行为测试,fincept-qt/src/app/WindowFrame_Setup.cpp

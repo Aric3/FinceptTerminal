@@ -73,28 +73,32 @@ static ToolResult run_edgar(const QStringList& args) {
     // violations since QProcess signals fire on the main thread and never
     // wake the worker's loop. See mcp/tools/ThreadHelper.h.
     auto* runner = &fincept::python::PythonRunner::instance();
-    detail::run_async_wait(runner, [runner, st, args](auto signal_done) {
-        runner->run(SCRIPT, args, [st, signal_done](const fincept::python::PythonResult& r) {
-            st->error.clear();
-            if (!r.success) {
-                st->error = r.error.isEmpty() ? r.output : r.error;
-            } else {
-                QString text = fincept::python::extract_json(r.output);
-                QJsonParseError pe;
-                auto doc = QJsonDocument::fromJson(text.toUtf8(), &pe);
-                if (pe.error != QJsonParseError::NoError) {
-                    st->error = QString("JSON parse error: %1").arg(pe.errorString());
+    if (!detail::run_async_wait(runner, [runner, st, args](auto signal_done) {
+            runner->run(SCRIPT, args, [st, signal_done](const fincept::python::PythonResult& r) {
+                auto callback_lease = signal_done.lease();
+                if (!callback_lease.owns_lock())
+                    return;
+                st->error.clear();
+                if (!r.success) {
+                    st->error = r.error.isEmpty() ? r.output : r.error;
                 } else {
-                    QJsonObject obj = doc.object();
-                    if (obj.value("success").toBool(true) == false)
-                        st->error = obj.value("error").toString("unknown error");
-                    else
-                        st->result = obj;
+                    QString text = fincept::python::extract_json(r.output);
+                    QJsonParseError pe;
+                    auto doc = QJsonDocument::fromJson(text.toUtf8(), &pe);
+                    if (pe.error != QJsonParseError::NoError) {
+                        st->error = QString("JSON parse error: %1").arg(pe.errorString());
+                    } else {
+                        QJsonObject obj = doc.object();
+                        if (obj.value("success").toBool(true) == false)
+                            st->error = obj.value("error").toString("unknown error");
+                        else
+                            st->result = obj;
+                    }
                 }
-            }
-            signal_done();
-        });
-    });
+                signal_done();
+            });
+        }))
+        return ToolResult::fail(detail::kAsyncWaitFailure);
 
     if (!st->error.isEmpty()) {
         LOG_WARN(TAG, QString("edgar error [%1]: %2").arg(args.value(0), st->error));

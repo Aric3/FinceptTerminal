@@ -38,13 +38,17 @@ static QVector<NewsArticle> fetch_articles_sync(bool force = false) {
     // The result lives on the heap so a callback that arrives AFTER the bound writes
     // into live memory instead of an unwound stack frame.
     auto result = std::make_shared<QVector<NewsArticle>>();
-    detail::run_async_wait(svc, [svc, force, result](auto signal_done) {
-        svc->fetch_all_news(force, [result, signal_done](bool ok, QVector<NewsArticle> arts) {
-            if (ok)
-                *result = std::move(arts);
-            signal_done();
-        });
-    });
+    if (!detail::run_async_wait(svc, [svc, force, result](auto signal_done) {
+            svc->fetch_all_news(force, [result, signal_done](bool ok, QVector<NewsArticle> arts) {
+                auto callback_lease = signal_done.lease();
+                if (!callback_lease.owns_lock())
+                    return;
+                if (ok)
+                    *result = std::move(arts);
+                signal_done();
+            });
+        }))
+        return {};
     return *result;
 }
 
@@ -386,13 +390,14 @@ std::vector<ToolDef> get_news_tools() {
             // the monitor it just made without a get_news_monitors round trip.
             auto* svc = &NewsMonitorService::instance();
             QString new_id;
-            detail::run_async_wait(svc, [svc, label, keywords, color, &new_id](auto signal_done) {
-                svc->add_monitor(label, keywords, color);
-                const auto all = svc->get_monitors();
-                if (!all.isEmpty())
-                    new_id = all.last().id;
-                signal_done();
-            });
+            if (!detail::run_async_wait(svc, [svc, label, keywords, color, &new_id](auto signal_done) {
+                    svc->add_monitor(label, keywords, color);
+                    const auto all = svc->get_monitors();
+                    if (!all.isEmpty())
+                        new_id = all.last().id;
+                    signal_done();
+                }))
+                return ToolResult::fail(detail::kAsyncWaitFailure);
             EventBus::instance().publish("news.monitor_added", QVariantMap{{"label", label}});
 
             LOG_INFO(TAG, "Added news monitor: " + label);
@@ -414,10 +419,11 @@ std::vector<ToolDef> get_news_tools() {
             // Copy the list on the service's thread — the News screen mutates it there.
             auto* svc = &NewsMonitorService::instance();
             QVector<NewsMonitor> monitors;
-            detail::run_async_wait(svc, [svc, &monitors](auto signal_done) {
-                monitors = svc->get_monitors();
-                signal_done();
-            });
+            if (!detail::run_async_wait(svc, [svc, &monitors](auto signal_done) {
+                    monitors = svc->get_monitors();
+                    signal_done();
+                }))
+                return ToolResult::fail(detail::kAsyncWaitFailure);
             QJsonArray result;
             for (const auto& m : monitors) {
                 result.append(QJsonObject{{"id", m.id},
@@ -479,20 +485,21 @@ std::vector<ToolDef> get_news_tools() {
             // and report the state it ended in.
             bool found = false;
             bool now_enabled = false;
-            detail::run_async_wait(svc, [svc, id, has_desired, desired, &found, &now_enabled](auto signal_done) {
-                for (const auto& m : svc->get_monitors()) {
-                    if (m.id != id)
-                        continue;
-                    found = true;
-                    now_enabled = m.enabled;
-                    break;
-                }
-                if (found && (!has_desired || desired != now_enabled)) {
-                    svc->toggle_monitor(id);
-                    now_enabled = !now_enabled;
-                }
-                signal_done();
-            });
+            if (!detail::run_async_wait(svc, [svc, id, has_desired, desired, &found, &now_enabled](auto signal_done) {
+                    for (const auto& m : svc->get_monitors()) {
+                        if (m.id != id)
+                            continue;
+                        found = true;
+                        now_enabled = m.enabled;
+                        break;
+                    }
+                    if (found && (!has_desired || desired != now_enabled)) {
+                        svc->toggle_monitor(id);
+                        now_enabled = !now_enabled;
+                    }
+                    signal_done();
+                }))
+                return ToolResult::fail(detail::kAsyncWaitFailure);
             if (!found)
                 return ToolResult::fail("Unknown monitor id '" + id + "' — use get_news_monitors to list ids");
             EventBus::instance().publish("news.monitor_toggled", QVariantMap{{"id", id}});
@@ -517,17 +524,18 @@ std::vector<ToolDef> get_news_tools() {
                 return ToolResult::fail("Missing 'id'");
             auto* svc = &NewsMonitorService::instance();
             bool found = false;
-            detail::run_async_wait(svc, [svc, id, &found](auto signal_done) {
-                for (const auto& m : svc->get_monitors()) {
-                    if (m.id == id) {
-                        found = true;
-                        break;
+            if (!detail::run_async_wait(svc, [svc, id, &found](auto signal_done) {
+                    for (const auto& m : svc->get_monitors()) {
+                        if (m.id == id) {
+                            found = true;
+                            break;
+                        }
                     }
-                }
-                if (found)
-                    svc->delete_monitor(id);
-                signal_done();
-            });
+                    if (found)
+                        svc->delete_monitor(id);
+                    signal_done();
+                }))
+                return ToolResult::fail(detail::kAsyncWaitFailure);
             if (!found)
                 return ToolResult::fail("Unknown monitor id '" + id + "' — nothing was deleted. Use "
                                                                         "get_news_monitors to list ids");
@@ -556,14 +564,18 @@ std::vector<ToolDef> get_news_tools() {
             auto* svc = &NewsService::instance();
             bool ok = false;
             NewsAnalysis analysis;
-            detail::run_async_wait(svc, [svc, url, &ok, &analysis](auto signal_done) {
-                svc->analyze_article(url, [signal_done, &ok, &analysis](bool success, NewsAnalysis a) {
-                    ok = success;
-                    if (success)
-                        analysis = std::move(a);
-                    signal_done();
-                });
-            });
+            if (!detail::run_async_wait(svc, [svc, url, &ok, &analysis](auto signal_done) {
+                    svc->analyze_article(url, [signal_done, &ok, &analysis](bool success, NewsAnalysis a) {
+                        auto callback_lease = signal_done.lease();
+                        if (!callback_lease.owns_lock())
+                            return;
+                        ok = success;
+                        if (success)
+                            analysis = std::move(a);
+                        signal_done();
+                    });
+                }))
+                return ToolResult::fail(detail::kAsyncWaitFailure);
 
             if (!ok)
                 return ToolResult::fail("Analysis failed (network error or insufficient credits)");
@@ -621,14 +633,18 @@ std::vector<ToolDef> get_news_tools() {
             auto* svc = &NewsService::instance();
             bool ok = false;
             QString summary;
-            detail::run_async_wait(svc, [svc, filtered, count, &ok, &summary](auto signal_done) {
-                svc->summarize_headlines(filtered, count, [signal_done, &ok, &summary](bool success, QString s) {
-                    ok = success;
-                    if (success)
-                        summary = std::move(s);
-                    signal_done();
-                });
-            });
+            if (!detail::run_async_wait(svc, [svc, filtered, count, &ok, &summary](auto signal_done) {
+                    svc->summarize_headlines(filtered, count, [signal_done, &ok, &summary](bool success, QString s) {
+                        auto callback_lease = signal_done.lease();
+                        if (!callback_lease.owns_lock())
+                            return;
+                        ok = success;
+                        if (success)
+                            summary = std::move(s);
+                        signal_done();
+                    });
+                }))
+                return ToolResult::fail(detail::kAsyncWaitFailure);
 
             if (!ok || summary.isEmpty())
                 return ToolResult::fail("Summarization failed (network error or empty response)");

@@ -59,17 +59,21 @@ static void profile_scrub_secrets(QJsonObject& obj) {
 static ToolResult run_user_api(std::function<void(UserApi::Callback)> trigger) {
     auto st = std::make_shared<ProfileApiWaitState>();
 
-    detail::run_async_wait(
-        &UserApi::instance(),
-        [st, trigger](auto signal_done) {
-            trigger([st, signal_done](ApiResponse resp) {
-                st->ok = resp.success;
-                st->data = resp.data;
-                st->err = resp.error;
-                signal_done();
-            });
-        },
-        kProfileUserApiWaitMs);
+    if (!detail::run_async_wait(
+            &UserApi::instance(),
+            [st, trigger](auto signal_done) {
+                trigger([st, signal_done](ApiResponse resp) {
+                    auto callback_lease = signal_done.lease();
+                    if (!callback_lease.owns_lock())
+                        return;
+                    st->ok = resp.success;
+                    st->data = resp.data;
+                    st->err = resp.error;
+                    signal_done();
+                });
+            },
+            kProfileUserApiWaitMs))
+        return ToolResult::fail(detail::kAsyncWaitFailure);
 
     if (!st->ok)
         return ToolResult::fail(st->err.isEmpty() ? "API request failed" : st->err);

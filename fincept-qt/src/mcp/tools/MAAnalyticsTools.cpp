@@ -49,28 +49,39 @@ static ToolResult run_ma_sync(const QString& context, std::function<void()> trig
 
     auto& svc = fincept::services::ma::MAAnalyticsService::instance();
 
-    detail::run_async_wait(&svc, [&svc, st, context, trigger = std::move(trigger)](auto signal_done) {
-        auto* gate = new QObject;
-        QObject::connect(&svc, &fincept::services::ma::MAAnalyticsService::result_ready, gate,
-                         [st, gate, context, signal_done](const QString& ctx, const QJsonObject& data) {
-                             if (ctx != context)
-                                 return;
-                             st->data = data;
-                             st->got_result = true;
-                             gate->deleteLater();
-                             signal_done();
-                         });
-        QObject::connect(&svc, &fincept::services::ma::MAAnalyticsService::error_occurred, gate,
-                         [st, gate, context, signal_done](const QString& ctx, const QString& msg) {
-                             if (ctx != context)
-                                 return;
-                             st->error = msg;
-                             st->got_result = true;
-                             gate->deleteLater();
-                             signal_done();
-                         });
-        trigger();
-    });
+    if (!detail::run_async_wait(&svc, [&svc, st, context, trigger = std::move(trigger)](auto signal_done) {
+            auto* gate = new QObject(&svc);
+            QObject::connect(&svc, &fincept::services::ma::MAAnalyticsService::result_ready, gate,
+                             [st, gate, context, signal_done](const QString& ctx, const QJsonObject& data) {
+                                 auto callback_lease = signal_done.lease();
+                                 if (!callback_lease.owns_lock()) {
+                                     gate->deleteLater();
+                                     return;
+                                 }
+                                 if (ctx != context)
+                                     return;
+                                 st->data = data;
+                                 st->got_result = true;
+                                 gate->deleteLater();
+                                 signal_done();
+                             });
+            QObject::connect(&svc, &fincept::services::ma::MAAnalyticsService::error_occurred, gate,
+                             [st, gate, context, signal_done](const QString& ctx, const QString& msg) {
+                                 auto callback_lease = signal_done.lease();
+                                 if (!callback_lease.owns_lock()) {
+                                     gate->deleteLater();
+                                     return;
+                                 }
+                                 if (ctx != context)
+                                     return;
+                                 st->error = msg;
+                                 st->got_result = true;
+                                 gate->deleteLater();
+                                 signal_done();
+                             });
+            trigger();
+        }))
+        return ToolResult::fail(detail::kAsyncWaitFailure);
 
     if (!st->got_result)
         return ToolResult::fail("M&A result missing: " + context +

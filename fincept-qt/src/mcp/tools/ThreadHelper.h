@@ -24,11 +24,15 @@
 #include <QMutex>
 #include <QObject>
 #include <QPointer>
+#include <QRecursiveMutex>
 #include <QThread>
 #include <QTimer>
 #include <QWaitCondition>
 
 #include <functional>
+#include <memory>
+#include <mutex>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -51,192 +55,168 @@ void run_on_target_thread_sync(QObject* target, F&& fn) {
     QMetaObject::invokeMethod(target, std::forward<F>(fn), Qt::BlockingQueuedConnection);
 }
 
-// ── run_async_callback_sync ──────────────────────────────────────────────────
-//
-// Bridge an async-callback API (the `target` posts work on its own thread
-// and eventually invokes `cb(args...)`) to a synchronous worker call.
-//
-// Usage:
-//   bool ok = false;
-//   QVector<NewsArticle> articles;
-//   run_async_callback_sync(svc, [&](auto resolve) {
-//       svc->fetch_all_news(force, [resolve](bool s, auto a) {
-//           resolve(s, std::move(a));
-//       });
-//   }, [&](bool s, QVector<NewsArticle> a) {
-//       ok = s;
-//       articles = std::move(a);
-//   });
-//
-// `start` is invoked on the target's thread with a `resolve(...)` callable.
-// `on_done` runs on the worker after `resolve` is called from any thread.
-//
-// Internally:
-//   • `start` is QueuedConnection-posted to the target.
-//   • `resolve` is callable from any thread (typically the network reply
-//     thread or the target's thread).
-//   • The worker sleeps on a QWaitCondition until `resolve` fires.
-//
-// Optional timeout_ms: if > 0 and resolve hasn't fired by then, on_done is
-// called with a default-constructed args (caller decides what that means).
-// Defaults to no timeout — relies on the underlying API to call back.
-template <typename Start, typename OnDone>
-void run_async_callback_sync(QObject* target, Start&& start, OnDone&& on_done, int /*timeout_ms*/ = 0) {
-    // We use a small heap-allocated Resolution so the resolve() lambda can
-    // outlive both the worker and the target — the target may invoke resolve
-    // synchronously (still on worker) or after queuing (on target thread).
-    struct Resolution {
-        QMutex m;
-        QWaitCondition cv;
-        bool done = false;
-        std::function<void()> consumer; // captures result by reference into on_done's storage
-    };
-    auto res = std::make_shared<Resolution>();
+// A callback must hold signal_done.lease() while touching caller-owned storage.
+// Timeout closes the gate under the same lock before the caller can unwind.
+// The queued start is also leased, so it cannot run after a timed-out call.
+inline constexpr int kAsyncWaitTimeoutMs = 120000;
+inline constexpr const char* kAsyncWaitFailure =
+    "Request did not complete (timeout, cancellation, failed start or unavailable service)";
 
-    auto resolve = [res]([[maybe_unused]] auto&&... args) {
-        QMutexLocker lock(&res->m);
-        if (res->done)
-            return; // ignore duplicate resolves
-        res->done = true;
-        if (res->consumer)
-            res->consumer();
-        // Note: caller's on_done storage is filled by `consumer` lambda built
-        // below. We just signal completion here.
-        res->cv.wakeAll();
-    };
+struct AsyncWaitState {
+    QRecursiveMutex access;
+    QMutex mutex;
+    QWaitCondition condition;
+    bool closed = false;        // guarded by access
+    bool completed = false;     // guarded by mutex
+    QEventLoop* loop = nullptr; // guarded by mutex
+    QDeadlineTimer deadline;
+};
 
-    // Build the consumer that will move results into on_done. The consumer
-    // is set BEFORE we post `start` so the resolve lambda always sees it.
-    // We need to capture the args from `resolve(args...)` somehow — a
-    // simpler interface is: just have callers wire the result themselves
-    // inside their resolve lambda and signal completion via a separate
-    // wake. So we expose a pure "wake" resolve and let callers handle args.
-    //
-    // (See `run_async_void_sync` below for the pure-wake version, which is
-    // what most callers actually want.)
-    Q_UNUSED(on_done);
+class AsyncWaitSignal {
+  public:
+    explicit AsyncWaitSignal(std::shared_ptr<AsyncWaitState> state) : state_(std::move(state)) {}
 
-    if (!target || QThread::currentThread() == target->thread()) {
-        std::forward<Start>(start)(resolve);
-    } else {
-        QMetaObject::invokeMethod(
-            target, [start = std::forward<Start>(start), resolve]() mutable { start(resolve); }, Qt::QueuedConnection);
+    std::unique_lock<QRecursiveMutex> lease() const {
+        std::unique_lock<QRecursiveMutex> lock(state_->access);
+        if (!state_->closed && state_->deadline.hasExpired())
+            finish(false);
+        if (state_->closed)
+            lock.unlock();
+        return lock;
     }
 
-    QMutexLocker lock(&res->m);
-    while (!res->done)
-        res->cv.wait(&res->m);
-}
+    void operator()() const { finish(true); }
+    void abort() const { finish(false); }
 
-// ── run_async_wait ───────────────────────────────────────────────────────────
-//
-// Simpler, more useful variant. Caller writes the result into outer storage
-// inside their start lambda (which captures by reference); the start lambda
-// is invoked on the target's thread; the worker blocks until `signal_done`
-// is called (from any thread).
-//
-//   QVector<NewsArticle> articles;
-//   bool ok = false;
-//   run_async_wait(svc, [&](auto signal_done) {
-//       svc->fetch_all_news(force, [&, signal_done](bool s, auto a) {
-//           ok = s;
-//           articles = std::move(a);
-//           signal_done();
-//       });
-//   });
-//
-// This is the pattern actually used by the existing fixed code in
-// NewsTools::fetch_articles_sync. We just generalize it so each tool file
-// doesn't re-roll its own QMutex/QWaitCondition.
-//
-// TIMEOUT (both paths). `signal_done` only ever fires from inside the service
-// callback, so any service that drops its callback on an error branch wedged
-// the waiter forever: the cross-thread path sat in an unbounded
-// `cv.wait(&m)`, the same-thread path in an unbounded `loop.exec()`. With 20+
-// call sites that is a permanent worker-thread leak or a frozen UI. Both paths
-// are now bounded and log an error on expiry, so a dropped callback degrades
-// to an error instead of a hang.
-//
-// Residual hazard, deliberately accepted: callers write results into their own
-// stack via a `[&]` capture inside `start`. If the callback arrives AFTER the
-// timeout, that write lands on an unwound frame. The bound is set high enough
-// (120 s) that only a genuinely dropped callback trips it, and an unbounded
-// hang is the worse failure. Do not lower it without auditing the call sites.
-inline constexpr int kAsyncWaitTimeoutMs = 120000;
+  private:
+    void finish(bool completed) const {
+        std::unique_lock<QRecursiveMutex> access(state_->access);
+        if (state_->closed)
+            return;
+        state_->closed = true;
+        QMutexLocker lock(&state_->mutex);
+        state_->completed = completed;
+        state_->condition.wakeAll();
+        if (state_->loop)
+            QMetaObject::invokeMethod(state_->loop, &QEventLoop::quit, Qt::QueuedConnection);
+    }
+    std::shared_ptr<AsyncWaitState> state_;
+};
 
+// Returns false on timeout, cancellation, target destruction or a failed start.
+// This ends the wait, not the underlying service work. Late callbacks are inert
+// only when they take a lease before reading/writing caller-owned storage.
 template <typename Start>
-void run_async_wait(QObject* target, Start&& start, int timeout_ms = kAsyncWaitTimeoutMs) {
-    struct Wait {
-        QMutex m;
-        QWaitCondition cv;
-        bool done = false;
-        QEventLoop* loop = nullptr; // set only while a same-thread nested loop is waiting
+bool run_async_wait(QObject* target, Start&& start, int timeout_ms = kAsyncWaitTimeoutMs,
+                    std::function<bool()> is_cancelled = {}) {
+    auto state = std::make_shared<AsyncWaitState>();
+    state->deadline = timeout_ms > 0 ? QDeadlineTimer(timeout_ms) : QDeadlineTimer(QDeadlineTimer::Forever);
+    AsyncWaitSignal signal(state);
+    auto invoke_start = [start = std::forward<Start>(start), signal, is_cancelled]() mutable {
+        auto lease = signal.lease();
+        if (!lease.owns_lock())
+            return;
+        if (is_cancelled && is_cancelled()) {
+            signal.abort();
+            return;
+        }
+        try {
+            start(signal);
+        } catch (...) {
+            LOG_ERROR("ThreadHelper", "Async start threw; releasing the call");
+            signal.abort();
+        }
     };
-    auto w = std::make_shared<Wait>();
-
-    auto signal_done = [w]() {
-        QMutexLocker lock(&w->m);
-        w->done = true;
-        w->cv.wakeAll();
-        if (w->loop) // same-thread waiter: quit its nested loop (queued → cross-thread-safe)
-            QMetaObject::invokeMethod(w->loop, &QEventLoop::quit, Qt::QueuedConnection);
-    };
+    const auto destroyed = target ? QObject::connect(target, &QObject::destroyed, [signal]() { signal.abort(); })
+                                  : QMetaObject::Connection{};
 
     if (!target || QThread::currentThread() == target->thread()) {
-        // We are ON the target's own thread — the very event loop that must
-        // deliver the async result. Blocking it on the QWaitCondition (as the
-        // cross-thread path below does) would freeze that loop → deadlock. So
-        // spin a nested event loop until signal_done fires. Everything stays on
-        // this thread, so any thread_local call-state (e.g. destructive-gate
-        // flags read by AgentService) is preserved; ExcludeUserInputEvents keeps
-        // UI clicks from re-entering the handler.
         QEventLoop loop;
         {
-            QMutexLocker lock(&w->m);
-            w->loop = &loop;
+            QMutexLocker lock(&state->mutex);
+            state->loop = &loop;
         }
-        std::forward<Start>(start)(signal_done);
-        bool already_done = false;
+        invoke_start();
+        bool closed;
         {
-            QMutexLocker lock(&w->m);
-            already_done = w->done; // start() may have resolved synchronously
+            std::unique_lock<QRecursiveMutex> lock(state->access);
+            closed = state->closed;
         }
-        if (!already_done) {
-            // Bound the nested loop. The timer is parented to `loop` so it dies
-            // with it; quit() on an already-quit loop is harmless.
+        if (!closed) {
+            QTimer timer;
+            timer.setSingleShot(true);
+            QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
             if (timeout_ms > 0)
-                QTimer::singleShot(timeout_ms, &loop, &QEventLoop::quit);
+                timer.start(static_cast<int>(state->deadline.remainingTime()));
+            QTimer cancellation;
+            if (is_cancelled) {
+                cancellation.setInterval(10);
+                QObject::connect(&cancellation, &QTimer::timeout, &loop, [&]() {
+                    if (is_cancelled())
+                        loop.quit();
+                });
+                cancellation.start();
+            }
             loop.exec(QEventLoop::ExcludeUserInputEvents);
         }
-        QMutexLocker lock(&w->m);
-        w->loop = nullptr;
-        if (!w->done)
-            LOG_ERROR("ThreadHelper", QString("run_async_wait timed out after %1 ms (same-thread path) — the service "
-                                              "never invoked its callback. Result is unset.")
-                                          .arg(timeout_ms));
-        return;
+        {
+            QMutexLocker lock(&state->mutex);
+            state->loop = nullptr;
+        }
+    } else {
+        if (!QMetaObject::invokeMethod(target, std::move(invoke_start), Qt::QueuedConnection))
+            signal.abort();
+        QMutexLocker lock(&state->mutex);
+        while (true) {
+            if (state->completed || state->deadline.hasExpired() || (is_cancelled && is_cancelled()))
+                break;
+            // A destroyed target / failed start closes the gate without a result.
+            lock.unlock();
+            bool closed;
+            {
+                std::unique_lock<QRecursiveMutex> access(state->access);
+                closed = state->closed;
+            }
+            lock.relock();
+            if (closed || state->completed)
+                break;
+            if (is_cancelled)
+                state->condition.wait(&state->mutex, 10);
+            else
+                state->condition.wait(&state->mutex, state->deadline);
+        }
     }
+    // Synchronize with an executing start/callback before releasing its stack.
+    signal.abort();
+    QObject::disconnect(destroyed);
+    QMutexLocker lock(&state->mutex);
+    if (!state->completed)
+        LOG_WARN("ThreadHelper", "Async wait ended without a result (timeout, cancellation or unavailable target)");
+    return state->completed;
+}
 
-    QMetaObject::invokeMethod(
-        target, [start = std::forward<Start>(start), signal_done]() mutable { start(signal_done); },
-        Qt::QueuedConnection);
-
-    QMutexLocker lock(&w->m);
-    if (timeout_ms > 0) {
-        // QDeadlineTimer so repeated spurious wakeups can't extend the total
-        // wait past the budget — a plain `wait(&m, timeout)` in a while loop
-        // restarts the clock on every wakeup.
-        QDeadlineTimer deadline(timeout_ms);
-        while (!w->done && !deadline.hasExpired())
-            w->cv.wait(&w->m, deadline);
-        if (!w->done)
-            LOG_ERROR("ThreadHelper", QString("run_async_wait timed out after %1 ms (cross-thread path) — the service "
-                                              "never invoked its callback. Result is unset.")
-                                          .arg(timeout_ms));
-        return;
-    }
-    while (!w->done)
-        w->cv.wait(&w->m);
+// Typed callback bridge. Unlike the old stub this forwards callback arguments
+// and invokes on_done on the caller, only after a successful completion.
+template <typename Start, typename OnDone>
+bool run_async_callback_sync(QObject* target, Start&& start, OnDone&& on_done, int timeout_ms = kAsyncWaitTimeoutMs) {
+    auto consume = std::make_shared<std::function<void()>>();
+    const bool completed = run_async_wait(
+        target,
+        [start = std::forward<Start>(start), done = std::forward<OnDone>(on_done), consume](auto signal_done) mutable {
+            start([done, consume, signal_done](auto... args) mutable {
+                auto lease = signal_done.lease();
+                if (!lease.owns_lock())
+                    return;
+                *consume = [done, values = std::make_tuple(std::move(args)...)]() mutable {
+                    std::apply(done, std::move(values));
+                };
+                signal_done();
+            });
+        },
+        timeout_ms);
+    if (completed && *consume)
+        (*consume)();
+    return completed;
 }
 
 } // namespace fincept::mcp::tools::detail

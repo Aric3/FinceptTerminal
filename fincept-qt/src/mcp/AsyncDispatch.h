@@ -48,6 +48,7 @@
 #include "mcp/McpTypes.h"
 
 #include <QFuture>
+#include <QFutureWatcher>
 #include <QMetaObject>
 #include <QPromise>
 #include <QRegularExpression>
@@ -56,6 +57,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <exception>
 #include <functional>
 #include <memory>
 
@@ -160,13 +162,42 @@ class AsyncDispatch {
             promise->finish();
         };
 
+        auto invoke = [body = std::forward<BodyFn>(body), resolve, resolved, ctx]() mutable {
+            if (resolved->load())
+                return;
+            if (ctx.cancelled()) {
+                resolve(ToolResult::fail("cancelled"));
+                return;
+            }
+            try {
+                body(resolve);
+            } catch (const std::exception& e) {
+                resolve(ToolResult::fail(QString("Tool execution error: ") + e.what()));
+            } catch (...) {
+                resolve(ToolResult::fail("Unknown error during tool execution"));
+            }
+        };
         if (!target || QThread::currentThread() == target->thread()) {
-            std::forward<BodyFn>(body)(resolve);
+            invoke();
             return;
         }
-
+        // A queued invocation vanishes if its target is destroyed. Complete
+        // the call immediately instead of waiting for the entire budget.
+        auto destroyed = std::make_shared<QMetaObject::Connection>();
+        *destroyed = QObject::connect(target, &QObject::destroyed,
+                                      [resolve]() { resolve(ToolResult::fail("Tool service was destroyed")); });
         QMetaObject::invokeMethod(
-            target, [body = std::forward<BodyFn>(body), resolve]() mutable { body(resolve); }, Qt::QueuedConnection);
+            target,
+            [target, promise, destroyed, invoke = std::move(invoke)]() mutable {
+                auto* watcher = new QFutureWatcher<ToolResult>(target);
+                QObject::connect(watcher, &QFutureWatcher<ToolResult>::finished, watcher, [watcher, destroyed]() {
+                    QObject::disconnect(*destroyed);
+                    watcher->deleteLater();
+                });
+                watcher->setFuture(promise->future());
+                invoke();
+            },
+            Qt::QueuedConnection);
     }
 };
 

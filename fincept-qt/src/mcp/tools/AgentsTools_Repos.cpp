@@ -411,19 +411,20 @@ void agents_internal::register_repos_tools(std::vector<ToolDef>& tools) {
             auto* svc = &services::AgentService::instance();
             bool saved = false;
             QString err;
-            detail::run_async_wait(svc, [svc, c, &saved, &err](auto signal_done) {
-                const auto h_ok = QObject::connect(svc, &services::AgentService::config_saved, svc,
-                                                   [&saved]() { saved = true; });
-                const auto h_err = QObject::connect(svc, &services::AgentService::error_occurred, svc,
-                                                    [&err](QString err_ctx, QString msg) {
-                                                        if (err_ctx == QLatin1String("save_config"))
-                                                            err = msg;
-                                                    });
-                svc->save_config(c);
-                QObject::disconnect(h_ok);
-                QObject::disconnect(h_err);
-                signal_done();
-            });
+            if (!detail::run_async_wait(svc, [svc, c, &saved, &err](auto signal_done) {
+                    const auto h_ok =
+                        QObject::connect(svc, &services::AgentService::config_saved, svc, [&saved]() { saved = true; });
+                    const auto h_err = QObject::connect(svc, &services::AgentService::error_occurred, svc,
+                                                        [&err](QString err_ctx, QString msg) {
+                                                            if (err_ctx == QLatin1String("save_config"))
+                                                                err = msg;
+                                                        });
+                    svc->save_config(c);
+                    QObject::disconnect(h_ok);
+                    QObject::disconnect(h_err);
+                    signal_done();
+                }))
+                return ToolResult::fail(detail::kAsyncWaitFailure);
             if (!saved)
                 return ToolResult::fail(err.isEmpty() ? QStringLiteral("Failed to save config") : err);
             return ToolResult::ok("Config saved", QJsonObject{{"id", c.id}});
@@ -446,19 +447,20 @@ void agents_internal::register_repos_tools(std::vector<ToolDef>& tools) {
             auto* svc = &services::AgentService::instance();
             bool deleted = false;
             QString err;
-            detail::run_async_wait(svc, [svc, id, &deleted, &err](auto signal_done) {
-                const auto h_ok = QObject::connect(svc, &services::AgentService::config_deleted, svc,
-                                                   [&deleted]() { deleted = true; });
-                const auto h_err = QObject::connect(svc, &services::AgentService::error_occurred, svc,
-                                                    [&err](QString err_ctx, QString msg) {
-                                                        if (err_ctx == QLatin1String("delete_config"))
-                                                            err = msg;
-                                                    });
-                svc->delete_config(id);
-                QObject::disconnect(h_ok);
-                QObject::disconnect(h_err);
-                signal_done();
-            });
+            if (!detail::run_async_wait(svc, [svc, id, &deleted, &err](auto signal_done) {
+                    const auto h_ok = QObject::connect(svc, &services::AgentService::config_deleted, svc,
+                                                       [&deleted]() { deleted = true; });
+                    const auto h_err = QObject::connect(svc, &services::AgentService::error_occurred, svc,
+                                                        [&err](QString err_ctx, QString msg) {
+                                                            if (err_ctx == QLatin1String("delete_config"))
+                                                                err = msg;
+                                                        });
+                    svc->delete_config(id);
+                    QObject::disconnect(h_ok);
+                    QObject::disconnect(h_err);
+                    signal_done();
+                }))
+                return ToolResult::fail(detail::kAsyncWaitFailure);
             if (!deleted)
                 return ToolResult::fail(err.isEmpty() ? QStringLiteral("Failed to delete config") : err);
             return ToolResult::ok("Config deleted", QJsonObject{{"id", id}});

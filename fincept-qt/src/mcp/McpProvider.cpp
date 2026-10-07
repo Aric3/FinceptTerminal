@@ -4,6 +4,7 @@
 
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "mcp/AsyncToolCall.h"
 #include "mcp/JobRegistry.h"
 #include "mcp/SchemaValidator.h"
 #include "mcp/TerminalMcpBridge.h"
@@ -24,11 +25,6 @@
 namespace fincept::mcp {
 
 static constexpr const char* TAG = "McpProvider";
-
-// How often the cancellation watch checks the flag. Cancellation is a human
-// action, so a quarter-second lag is imperceptible, and the timer only exists
-// for the lifetime of a job-backed call.
-static constexpr int kCancelPollMs = 250;
 
 McpProvider& McpProvider::instance() {
     static McpProvider s;
@@ -359,132 +355,12 @@ QFuture<ToolResult> McpProvider::call_tool_async(const QString& name, const QJso
     // Async preferred; fall back to sync wrapped in an immediately-resolved
     // future so call_tool() works uniformly for legacy handlers.
     if (async_handler) {
-        auto promise = std::make_shared<QPromise<ToolResult>>();
-        promise->start();
-
-        // Cancellation flag — set by the timeout timer or by a caller-supplied
-        // hook. Wired into ctx.is_cancelled below.
-        auto cancelled = std::make_shared<std::atomic<bool>>(false);
-        // Whether the CALLER supplied a hook (i.e. this call runs under a job and
-        // `job_cancel` can flip it). Composition below hides that distinction, and
-        // it decides whether the cancellation watch is worth arming: our own
-        // internal flag is only ever raised by the timeout timer, which already
-        // resolves the promise itself.
-        const bool caller_can_cancel = static_cast<bool>(ctx.is_cancelled);
-        if (!ctx.is_cancelled) {
-            ctx.is_cancelled = [cancelled]() { return cancelled->load(); };
-        } else {
-            // Compose: original hook OR our internal flag.
-            auto orig = ctx.is_cancelled;
-            ctx.is_cancelled = [orig, cancelled]() { return cancelled->load() || orig(); };
-        }
-
-        // Single-winner guard for promise resolution. `promise->future().isFinished()`
-        // is NOT a valid guard on its own: the watchdog runs on the GUI thread
-        // while the handler resolves on a service/worker thread, so both could
-        // read "not finished" and then both addResult() — the second one lands
-        // after finish() and trips a Qt assertion. A compare-exchange makes
-        // exactly one caller the winner.
-        //
-        // Resolving also tears down the watchdog. Previously the timer was left
-        // to fire at its full interval even when the tool finished in
-        // milliseconds, so a tool with a 300 s budget parked a live timer on the
-        // GUI thread for 300 s after it was already done — once per call.
-        // `watchdog_slot` is filled in below; resolve() only reads it, so the
-        // fast path (handler resolves before we even arm the timer) is safe.
-        auto resolved = std::make_shared<std::atomic<bool>>(false);
-        // Publish it so the handler's own resolver races the SAME atomic as the
-        // watchdog and the cancellation watch, rather than a private copy that
-        // guards nothing against them. See ToolContext::resolve_guard.
-        ctx.resolve_guard = resolved;
-        auto watchdog_slot = std::make_shared<QPointer<QTimer>>();
-        auto resolve = [promise, resolved, watchdog_slot](ToolResult r) {
-            bool expected = false;
-            if (!resolved->compare_exchange_strong(expected, true))
-                return;
-            promise->addResult(std::move(r));
-            promise->finish();
-            if (QTimer* wd = watchdog_slot->data()) {
-                QMetaObject::invokeMethod(
-                    wd,
-                    [watchdog_slot]() {
-                        if (QTimer* t = watchdog_slot->data()) {
-                            t->stop();
-                            t->deleteLater();
-                        }
-                    },
-                    Qt::QueuedConnection);
-            }
-        };
-
-        // Arm a one-shot timeout. We post the timer onto the QApplication
-        // thread so it ticks even if the caller returns immediately.
-        auto* watchdog = new QTimer;
-        watchdog->setSingleShot(true);
-        watchdog->moveToThread(qApp->thread());
-        *watchdog_slot = watchdog;
-        QObject::connect(watchdog, &QTimer::timeout, watchdog, [watchdog, resolve, resolved, cancelled, name]() {
-            // A handler that finishes through AsyncDispatch (or the cancellation
-            // watch) wins the shared `resolved` flag directly and never reaches the
-            // teardown inside `resolve`, so this timer is still armed when the budget
-            // expires. Nothing timed out: say nothing and release the timer — the old
-            // path logged a false "timed out" WARN for every completed async call and
-            // leaked the QTimer, because `resolve` bails out before its deleteLater.
-            if (resolved->load()) {
-                watchdog->deleteLater();
-                return;
-            }
-            cancelled->store(true);
-            LOG_WARN(TAG, QString("Tool '%1' timed out").arg(name));
-            resolve(ToolResult::fail("Tool '" + name + "' timed out"));
-            watchdog->deleteLater(); // single-shot, spent; covers losing the CAS race inside resolve()
-        });
-        QMetaObject::invokeMethod(
-            watchdog, [watchdog, ms = ctx.timeout_ms]() { watchdog->start(ms); }, Qt::QueuedConnection);
-
-        // Cancellation watch. `job_cancel` raises a flag and the contract says
-        // handlers poll it — but almost none do, and the ones that do check it
-        // only in their completion callback, i.e. after the work they were meant
-        // to abandon has already finished. So cancelling a 300 s backtest freed
-        // nothing: the job stayed "running" for the full budget and the model
-        // kept polling a job it had explicitly given up on.
-        //
-        // Watching the flag here resolves the promise as soon as it flips, for
-        // every async tool, with no handler cooperation. Be precise about what
-        // that buys: it ends the CALL, not the work. The handler keeps running
-        // until it finishes or the watchdog fires, and its late resolve() is
-        // absorbed by the single-winner guard. What the user gets back is the
-        // turn, the job slot, and an honest terminal state — which is the part
-        // that was missing. Killing the underlying process needs a cancellation
-        // handle on the service doing the work (PythonRunner has none today).
-        //
-        // Only armed when the caller can actually cancel, so the ~800 tools that
-        // never run under a job pay nothing.
-        if (caller_can_cancel) {
-            auto* cancel_watch = new QTimer;
-            cancel_watch->setInterval(kCancelPollMs);
-            cancel_watch->moveToThread(qApp->thread());
-            auto is_cancelled = ctx.is_cancelled; // composed hook: internal flag OR caller's
-            QObject::connect(cancel_watch, &QTimer::timeout, cancel_watch,
-                             [cancel_watch, resolve, resolved, is_cancelled, name]() {
-                                 // Resolved by anyone (handler, watchdog, us) — stand down.
-                                 if (resolved->load()) {
-                                     cancel_watch->stop();
-                                     cancel_watch->deleteLater();
-                                     return;
-                                 }
-                                 if (!is_cancelled())
-                                     return;
-                                 cancel_watch->stop();
-                                 cancel_watch->deleteLater();
-                                 LOG_INFO(TAG, QString("Tool '%1' cancelled — releasing the call; the handler "
-                                                       "runs on until it finishes or times out")
-                                                   .arg(name));
-                                 resolve(ToolResult::fail("cancelled"));
-                             });
-            QMetaObject::invokeMethod(
-                cancel_watch, [cancel_watch]() { cancel_watch->start(); }, Qt::QueuedConnection);
-        }
+        auto call = prepare_async_tool_call(name, std::move(ctx));
+        auto promise = call.promise;
+        auto resolve = call.resolve;
+        ctx = std::move(call.context);
+        if (promise->future().isFinished())
+            return promise->future();
 
         try {
             LOG_DEBUG(TAG, "Calling async tool: " + name);

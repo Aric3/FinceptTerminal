@@ -203,3 +203,10 @@ fincept_add_test(tst_portfolio_storage
 target_link_libraries(tst_portfolio_storage PRIVATE Qt6::Sql)
 
 fincept_add_test(tst_portfolio_valuation tst_portfolio_valuation.cpp)
+
+# Real timeout/cancellation gates; no application boot, network or user profile.
+fincept_add_test(tst_async_lifecycle
+    tst_async_lifecycle.cpp
+    ../src/core/logging/Logger.cpp)
+
+set_tests_properties(tst_async_lifecycle PROPERTIES TIMEOUT 15)

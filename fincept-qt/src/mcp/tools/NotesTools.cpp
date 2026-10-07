@@ -57,14 +57,15 @@ std::vector<ToolDef> get_notes_tools() {
 
             qint64 new_id = -1;
             QString error;
-            detail::run_async_wait(QCoreApplication::instance(), [&](auto signal_done) {
-                auto r = NotesRepository::instance().create(note);
-                if (r.is_err())
-                    error = "Failed to create note: " + QString::fromStdString(r.error());
-                else
-                    new_id = r.value();
-                signal_done();
-            });
+            if (!detail::run_async_wait(QCoreApplication::instance(), [&](auto signal_done) {
+                    auto r = NotesRepository::instance().create(note);
+                    if (r.is_err())
+                        error = "Failed to create note: " + QString::fromStdString(r.error());
+                    else
+                        new_id = r.value();
+                    signal_done();
+                }))
+                return ToolResult::fail(detail::kAsyncWaitFailure);
             if (!error.isEmpty())
                 return ToolResult::fail(error);
 
@@ -94,30 +95,31 @@ std::vector<ToolDef> get_notes_tools() {
             QJsonArray arr;
             int total = 0;
             QString error;
-            detail::run_async_wait(QCoreApplication::instance(), [&](auto signal_done) {
-                auto r = query.isEmpty() ? NotesRepository::instance().list_all()
-                                         : NotesRepository::instance().search(query);
-                if (r.is_err()) {
-                    error = "Failed to load notes: " + QString::fromStdString(r.error());
+            if (!detail::run_async_wait(QCoreApplication::instance(), [&](auto signal_done) {
+                    auto r = query.isEmpty() ? NotesRepository::instance().list_all()
+                                             : NotesRepository::instance().search(query);
+                    if (r.is_err()) {
+                        error = "Failed to load notes: " + QString::fromStdString(r.error());
+                        signal_done();
+                        return;
+                    }
+                    total = static_cast<int>(r.value().size());
+                    for (const auto& n : r.value()) {
+                        if (arr.size() >= limit)
+                            break;
+                        arr.append(QJsonObject{{"id", n.id},
+                                               {"title", n.title},
+                                               {"category", n.category},
+                                               {"priority", n.priority},
+                                               {"tickers", n.tickers},
+                                               {"sentiment", n.sentiment},
+                                               {"is_favorite", n.is_favorite},
+                                               {"created_at", n.created_at},
+                                               {"updated_at", n.updated_at}});
+                    }
                     signal_done();
-                    return;
-                }
-                total = static_cast<int>(r.value().size());
-                for (const auto& n : r.value()) {
-                    if (arr.size() >= limit)
-                        break;
-                    arr.append(QJsonObject{{"id", n.id},
-                                           {"title", n.title},
-                                           {"category", n.category},
-                                           {"priority", n.priority},
-                                           {"tickers", n.tickers},
-                                           {"sentiment", n.sentiment},
-                                           {"is_favorite", n.is_favorite},
-                                           {"created_at", n.created_at},
-                                           {"updated_at", n.updated_at}});
-                }
-                signal_done();
-            });
+                }))
+                return ToolResult::fail(detail::kAsyncWaitFailure);
             if (!error.isEmpty())
                 return ToolResult::fail(error);
             // Say so when the list was clipped — a 50-item array read as "all my notes" would
@@ -157,29 +159,30 @@ std::vector<ToolDef> get_notes_tools() {
 
             QJsonObject note;
             QString error;
-            detail::run_async_wait(QCoreApplication::instance(), [&](auto signal_done) {
-                auto r = NotesRepository::instance().get(id);
-                if (r.is_err()) {
-                    error = "Note not found: " + QString::number(id);
-                } else {
-                    const auto& n = r.value();
-                    const bool truncated = n.content.size() > max_chars;
-                    note = QJsonObject{{"id", n.id},
-                                       {"title", n.title},
-                                       {"category", n.category},
-                                       {"priority", n.priority},
-                                       {"tickers", n.tickers},
-                                       {"tags", n.tags},
-                                       {"sentiment", n.sentiment},
-                                       {"is_favorite", n.is_favorite},
-                                       {"created_at", n.created_at},
-                                       {"updated_at", n.updated_at},
-                                       {"content", n.content.left(max_chars)},
-                                       {"content_chars", static_cast<int>(n.content.size())},
-                                       {"truncated", truncated}};
-                }
-                signal_done();
-            });
+            if (!detail::run_async_wait(QCoreApplication::instance(), [&](auto signal_done) {
+                    auto r = NotesRepository::instance().get(id);
+                    if (r.is_err()) {
+                        error = "Note not found: " + QString::number(id);
+                    } else {
+                        const auto& n = r.value();
+                        const bool truncated = n.content.size() > max_chars;
+                        note = QJsonObject{{"id", n.id},
+                                           {"title", n.title},
+                                           {"category", n.category},
+                                           {"priority", n.priority},
+                                           {"tickers", n.tickers},
+                                           {"tags", n.tags},
+                                           {"sentiment", n.sentiment},
+                                           {"is_favorite", n.is_favorite},
+                                           {"created_at", n.created_at},
+                                           {"updated_at", n.updated_at},
+                                           {"content", n.content.left(max_chars)},
+                                           {"content_chars", static_cast<int>(n.content.size())},
+                                           {"truncated", truncated}};
+                    }
+                    signal_done();
+                }))
+                return ToolResult::fail(detail::kAsyncWaitFailure);
             if (!error.isEmpty())
                 return ToolResult::fail(error);
             return ToolResult::ok_data(note);
@@ -203,12 +206,13 @@ std::vector<ToolDef> get_notes_tools() {
                 return ToolResult::fail("Missing or invalid 'id'");
 
             QString error;
-            detail::run_async_wait(QCoreApplication::instance(), [&](auto signal_done) {
-                auto r = NotesRepository::instance().remove(id);
-                if (r.is_err())
-                    error = "Failed to delete note: " + QString::fromStdString(r.error());
-                signal_done();
-            });
+            if (!detail::run_async_wait(QCoreApplication::instance(), [&](auto signal_done) {
+                    auto r = NotesRepository::instance().remove(id);
+                    if (r.is_err())
+                        error = "Failed to delete note: " + QString::fromStdString(r.error());
+                    signal_done();
+                }))
+                return ToolResult::fail(detail::kAsyncWaitFailure);
             if (!error.isEmpty())
                 return ToolResult::fail(error);
 

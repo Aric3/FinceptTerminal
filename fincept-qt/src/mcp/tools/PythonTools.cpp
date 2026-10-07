@@ -29,30 +29,34 @@ static constexpr const char* TAG = "PythonTools";
 
     ToolResult out;
     auto* runner = &python::PythonRunner::instance();
-    detail::run_async_wait(runner, [&](auto signal_done) {
-        runner->run(script, args, [&, signal_done](python::PythonResult result) {
-            if (!result.success) {
-                out = ToolResult::fail("Script failed: " + result.error);
-            } else {
-                QString json_text = python::extract_json(result.output);
-                if (json_text.isEmpty())
-                    json_text = result.output;
-
-                QJsonDocument doc = QJsonDocument::fromJson(json_text.toUtf8());
-                if (!doc.isNull()) {
-                    if (doc.isObject())
-                        out = ToolResult::ok_data(doc.object());
-                    else if (doc.isArray())
-                        out = ToolResult::ok_data(doc.array());
-                    else
-                        out = ToolResult::ok(result.output);
+    if (!detail::run_async_wait(runner, [&](auto signal_done) {
+            runner->run(script, args, [&, signal_done](python::PythonResult result) {
+                auto callback_lease = signal_done.lease();
+                if (!callback_lease.owns_lock())
+                    return;
+                if (!result.success) {
+                    out = ToolResult::fail("Script failed: " + result.error);
                 } else {
-                    out = ToolResult::ok(result.output);
+                    QString json_text = python::extract_json(result.output);
+                    if (json_text.isEmpty())
+                        json_text = result.output;
+
+                    QJsonDocument doc = QJsonDocument::fromJson(json_text.toUtf8());
+                    if (!doc.isNull()) {
+                        if (doc.isObject())
+                            out = ToolResult::ok_data(doc.object());
+                        else if (doc.isArray())
+                            out = ToolResult::ok_data(doc.array());
+                        else
+                            out = ToolResult::ok(result.output);
+                    } else {
+                        out = ToolResult::ok(result.output);
+                    }
                 }
-            }
-            signal_done();
-        });
-    });
+                signal_done();
+            });
+        }))
+        return ToolResult::fail(detail::kAsyncWaitFailure);
 
     return out;
 }

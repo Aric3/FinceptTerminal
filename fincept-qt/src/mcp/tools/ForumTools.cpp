@@ -98,16 +98,20 @@ static ToolResult run_forum_sync(std::function<void(std::function<void(bool, T)>
     QJsonValue result_data;
 
     auto* svc = &ForumService::instance();
-    detail::run_async_wait(svc, [&](auto signal_done) {
-        trigger([&, signal_done](bool success, T data) {
-            ok = success;
-            if (success)
-                result_data = serialise(data);
-            else
-                err_msg = "Forum service returned an error";
-            signal_done();
-        });
-    });
+    if (!detail::run_async_wait(svc, [&](auto signal_done) {
+            trigger([&, signal_done](bool success, T data) {
+                auto callback_lease = signal_done.lease();
+                if (!callback_lease.owns_lock())
+                    return;
+                ok = success;
+                if (success)
+                    result_data = serialise(data);
+                else
+                    err_msg = "Forum service returned an error";
+                signal_done();
+            });
+        }))
+        return ToolResult::fail(detail::kAsyncWaitFailure);
 
     if (!ok)
         return ToolResult::fail(err_msg);
@@ -124,13 +128,17 @@ static ToolResult run_forum_bool(std::function<void(ForumService::BoolCallback)>
     QString msg = "Forum service did not respond";
 
     auto* svc = &ForumService::instance();
-    detail::run_async_wait(svc, [&](auto signal_done) {
-        trigger([&, signal_done](bool success, QString message) {
-            ok = success;
-            msg = message;
-            signal_done();
-        });
-    });
+    if (!detail::run_async_wait(svc, [&](auto signal_done) {
+            trigger([&, signal_done](bool success, QString message) {
+                auto callback_lease = signal_done.lease();
+                if (!callback_lease.owns_lock())
+                    return;
+                ok = success;
+                msg = message;
+                signal_done();
+            });
+        }))
+        return ToolResult::fail(detail::kAsyncWaitFailure);
 
     if (!ok)
         return ToolResult::fail(msg.isEmpty() ? "Forum operation failed" : msg);
@@ -160,9 +168,13 @@ std::vector<ToolDef> get_forum_tools() {
             // directly from it — the cross-thread hazard ThreadHelper.h documents,
             // and a nested loop on the UI thread when called from there. Marshal
             // the call to the service's thread like every other tool here.
-            detail::run_async_wait(&ForumService::instance(), [&](auto signal_done) {
-                ForumService::instance().fetch_categories(
-                    [&, signal_done](bool success, QVector<ForumCategory> cats, ForumPermissions perms) {
+            if (!detail::run_async_wait(&ForumService::instance(), [&](auto signal_done) {
+                    ForumService::instance().fetch_categories([&, signal_done](bool success,
+                                                                               QVector<ForumCategory> cats,
+                                                                               ForumPermissions perms) {
+                        auto callback_lease = signal_done.lease();
+                        if (!callback_lease.owns_lock())
+                            return;
                         ok = success;
                         if (success) {
                             QJsonArray arr;
@@ -182,7 +194,8 @@ std::vector<ToolDef> get_forum_tools() {
                         }
                         signal_done();
                     });
-            });
+                }))
+                return ToolResult::fail(detail::kAsyncWaitFailure);
 
             if (!ok)
                 return ToolResult::fail(err);
@@ -532,14 +545,18 @@ std::vector<ToolDef> get_forum_tools() {
             // profile and overlay only what was supplied.
             ForumProfile current;
             bool have_current = false;
-            detail::run_async_wait(&ForumService::instance(), [&](auto signal_done) {
-                ForumService::instance().fetch_my_profile([&, signal_done](bool success, ForumProfile p) {
-                    have_current = success;
-                    if (success)
-                        current = std::move(p);
-                    signal_done();
-                });
-            });
+            if (!detail::run_async_wait(&ForumService::instance(), [&](auto signal_done) {
+                    ForumService::instance().fetch_my_profile([&, signal_done](bool success, ForumProfile p) {
+                        auto callback_lease = signal_done.lease();
+                        if (!callback_lease.owns_lock())
+                            return;
+                        have_current = success;
+                        if (success)
+                            current = std::move(p);
+                        signal_done();
+                    });
+                }))
+                return ToolResult::fail(detail::kAsyncWaitFailure);
             if (!have_current)
                 return ToolResult::fail("Could not read the current forum profile — nothing was changed");
 

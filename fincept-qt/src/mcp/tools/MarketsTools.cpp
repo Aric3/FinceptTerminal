@@ -51,9 +51,12 @@ std::vector<ToolDef> get_markets_tools() {
             auto* svc = &services::MarketDataService::instance();
             bool ok = false;
             services::QuoteData q;
-            detail::run_async_wait(svc, [svc, symbol, &ok, &q](auto signal_done) {
+            const bool completed = detail::run_async_wait(svc, [svc, symbol, &ok, &q](auto signal_done) {
                 svc->fetch_quotes({symbol},
                                   [&ok, &q, symbol, signal_done](bool success, QVector<services::QuoteData> quotes) {
+                                      auto callback_lease = signal_done.lease();
+                                      if (!callback_lease.owns_lock())
+                                          return;
                                       if (success) {
                                           for (const auto& candidate : quotes) {
                                               if (candidate.symbol.compare(symbol, Qt::CaseInsensitive) == 0) {
@@ -66,6 +69,9 @@ std::vector<ToolDef> get_markets_tools() {
                                       signal_done();
                                   });
             });
+            if (!completed)
+                return ToolResult::fail(
+                    "Market-data request did not complete (timeout, cancellation or unavailable service)");
 
             if (!ok) {
                 LOG_WARN(TAG, "fetch_quotes returned no data for " + symbol);
@@ -139,47 +145,54 @@ std::vector<ToolDef> get_markets_tools() {
 
             auto* runner = &fincept::python::PythonRunner::instance();
             const QStringList py_args = {"search", query, QString::number(limit)};
-            detail::run_async_wait(runner, [runner, st, py_args, query](auto signal_done) {
-                runner->run("yfinance_data.py", py_args, [st, query, signal_done](const fincept::python::PythonResult& r) {
-                    QString& error = st->error;
-                    QJsonObject& result_obj = st->result_obj;
-                    if (!r.success) {
-                        error = r.error.isEmpty() ? r.output : r.error;
-                    } else {
-                        const QString text = fincept::python::extract_json(r.output);
-                        QJsonParseError pe;
-                        auto doc = QJsonDocument::fromJson(text.toUtf8(), &pe);
-                        if (pe.error != QJsonParseError::NoError) {
-                            error = QString("JSON parse error: %1").arg(pe.errorString());
-                        } else if (!doc.isObject()) {
-                            error = "Unexpected response shape";
-                        } else {
-                            QJsonObject o = doc.object();
-                            if (o.contains("error") && !o.value("error").toString().isEmpty()) {
-                                error = o.value("error").toString();
-                            } else {
-                                // Trim each row to the fields the model needs to disambiguate.
-                                // Keeping the payload compact reduces follow-up token cost.
-                                QJsonArray trimmed;
-                                for (const auto& v : o.value("results").toArray()) {
-                                    QJsonObject row = v.toObject();
-                                    QJsonObject keep;
-                                    keep["symbol"] = row.value("symbol").toString();
-                                    keep["name"] = row.value("name").toString();
-                                    keep["exchange"] = row.value("exchange").toString();
-                                    keep["type"] = row.value("type").toString();
-                                    keep["currency"] = row.value("currency").toString();
-                                    trimmed.append(keep);
+            const bool completed = detail::run_async_wait(runner, [runner, st, py_args, query](auto signal_done) {
+                runner->run("yfinance_data.py", py_args,
+                            [st, query, signal_done](const fincept::python::PythonResult& r) {
+                                auto callback_lease = signal_done.lease();
+                                if (!callback_lease.owns_lock())
+                                    return;
+                                QString& error = st->error;
+                                QJsonObject& result_obj = st->result_obj;
+                                if (!r.success) {
+                                    error = r.error.isEmpty() ? r.output : r.error;
+                                } else {
+                                    const QString text = fincept::python::extract_json(r.output);
+                                    QJsonParseError pe;
+                                    auto doc = QJsonDocument::fromJson(text.toUtf8(), &pe);
+                                    if (pe.error != QJsonParseError::NoError) {
+                                        error = QString("JSON parse error: %1").arg(pe.errorString());
+                                    } else if (!doc.isObject()) {
+                                        error = "Unexpected response shape";
+                                    } else {
+                                        QJsonObject o = doc.object();
+                                        if (o.contains("error") && !o.value("error").toString().isEmpty()) {
+                                            error = o.value("error").toString();
+                                        } else {
+                                            // Trim each row to the fields the model needs to disambiguate.
+                                            // Keeping the payload compact reduces follow-up token cost.
+                                            QJsonArray trimmed;
+                                            for (const auto& v : o.value("results").toArray()) {
+                                                QJsonObject row = v.toObject();
+                                                QJsonObject keep;
+                                                keep["symbol"] = row.value("symbol").toString();
+                                                keep["name"] = row.value("name").toString();
+                                                keep["exchange"] = row.value("exchange").toString();
+                                                keep["type"] = row.value("type").toString();
+                                                keep["currency"] = row.value("currency").toString();
+                                                trimmed.append(keep);
+                                            }
+                                            result_obj["query"] = query;
+                                            result_obj["count"] = trimmed.size();
+                                            result_obj["results"] = trimmed;
+                                        }
+                                    }
                                 }
-                                result_obj["query"] = query;
-                                result_obj["count"] = trimmed.size();
-                                result_obj["results"] = trimmed;
-                            }
-                        }
-                    }
-                    signal_done();
-                });
+                                signal_done();
+                            });
             });
+            if (!completed)
+                return ToolResult::fail(
+                    "Market-data request did not complete (timeout, cancellation or unavailable service)");
 
             const QString error = st->error;
             const QJsonObject result_obj = st->result_obj;
@@ -244,14 +257,21 @@ std::vector<ToolDef> get_markets_tools() {
             auto* svc = &services::MarketDataService::instance();
             bool ok = false;
             QVector<services::HistoryPoint> points;
-            detail::run_async_wait(svc, [svc, symbol, period, interval, &ok, &points](auto signal_done) {
+            const bool completed = detail::run_async_wait(svc, [svc, symbol, period, interval, &ok,
+                                                                &points](auto signal_done) {
                 svc->fetch_history(symbol, period, interval,
                                    [&ok, &points, signal_done](bool success, QVector<services::HistoryPoint> result) {
+                                       auto callback_lease = signal_done.lease();
+                                       if (!callback_lease.owns_lock())
+                                           return;
                                        ok = success;
                                        points = std::move(result);
                                        signal_done();
                                    });
             });
+            if (!completed)
+                return ToolResult::fail(
+                    "Market-data request did not complete (timeout, cancellation or unavailable service)");
 
             if (!ok) {
                 LOG_WARN(TAG, QString("fetch_history failed for %1 (%2/%3)").arg(symbol, period, interval));

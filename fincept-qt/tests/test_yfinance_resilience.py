@@ -32,7 +32,7 @@ class Ticker:
         return self.information
 
     def get_history_metadata(self):
-        return {"exchangeName": "SNP"}
+        return {"exchangeName": "SNP", "currency": "USD"}
 
 
 def bars(closes=(100.0, 110.0)):
@@ -51,6 +51,7 @@ class YahooResilienceTest(unittest.TestCase):
         self.assertEqual(quote["previous_close"], 100)
         self.assertEqual(quote["change"], 10)
         self.assertEqual(quote["change_percent"], 10)
+        self.assertEqual(quote["currency"], "USD")
 
     def test_transient_failure_retries_once(self):
         with patch.object(data.yf, "Ticker", side_effect=[

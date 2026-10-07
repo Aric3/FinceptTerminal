@@ -337,3 +337,22 @@ GUI 实际持仓/故障报价/JSON往返尚未在独立应用 profile 上验证�
 实际界面验收（12:18）：^GSPC 报价/成交量/52周区间显示，切换1M周期后日K图绘出，页面没有持续Loading或错误弹窗。指数不适用的公司估值项目仍显示“无”；未核对外部价格精度，不将该观察当作全模块网络验收。Command-Q 后主进程消失，没有新增Fincept崩溃报告；随后重新启动。未添加持仓、下单或修改凭据。
 
 下一阶段：只读 CLI（数据源状态、报价、历史、组合估值查询、结构化 JSON 输出），之后再评估标准 MCP 接入。
+
+
+### 只读 CLI 与 Agent 调用入口（2026-10-07）
+
+新增独立 Qt Core/Network/Sql CLI `fincept-local`，可单独配置构建，也集成进本地版主 CMake。复用 ProxySettings/ProxyManager 和 PortfolioValuation；无需 GUI、账户登录、券商或全应用数据库初始化。未增加依赖/工具链。
+
+- doctor（默认离线检查，--online验证Yahoo）、profiles list、symbols search/resolve、quotes get、history get、portfolio list/resolve/get/value。data read仅允许quote/info/resolve_symbol，未暴露任意脚本/写工具调用。
+- 统一JSON版本1 envelope，错误分类与非零退出码；全provider进程预算1..600秒，默认120秒，超时结束本CLI拥有的Python进程；provider输出与输入JSON上限8MiB，不转发可能含凭据的provider stderr/error文本。
+- 默认profile为default，允许显式选择，不猜测/修改GUI活动profile。数据库以SQLite readonly/query_only打开，不链接迁移/同步服务，缺库直接失败；组合元数据与持仓在同一只读快照中读取，网络等待前释放。
+- 组合估值支持显式同币种prices文件或Yahoo实时取价；复用桌面估值函数。缺报价、缺日涨跌或币种不匹配明确报告，缺价格按成本回退；覆盖不全时complete=false，日涨跌不完整时为null。无FX转换、券商报价或快照写入。Yahoo单标的报价新增缓存metadata.currency用于校验。
+- 分页组合列表；历史输出最新N根但按时间升序，返回available/returned/truncated；搜索在客户端再次执行数量上限。日线价格不是可成交实时价。
+
+安装：`/Users/ac/.local/bin/fincept-local`只包含指向现有隔离SDK build-cli二进制的launcher；未修改shell启动配置。需保留SDK和仓库脚本路径，并非独立发行包。调用技能源位于fincept-qt/cli/agent-skill/SKILL.md，已安装到`/Users/ac/.codex/skills/fincept-local/SKILL.md`并通过skill校验。CLI详细契约见fincept-qt/cli/README.md。
+
+验证：独立CLI构建及8项黑盒测试通过（临时SQLite/受控provider脚本，无真实账户写入）；组合值2100/成本2000/盈亏100、缺价回退2200、币种拒绝、分页/歧义名称/SQL参数、输入错误、provider敏感信息过滤、超时、缺库不创建均覆盖，逐次检查fixture数据库哈希与mtime不变。完整应用+CLI构建成功，CTest **13/13**通过；Yahoo Python回归 **8/8**通过；diff检查通过。
+
+从/private/tmp通过PATH运行帮助、version、doctor及实际Yahoo ^GSPC报价、AAPL历史/代码解析/资料、Apple搜索均成功；doctor --online显示system代理、HTTP/HTTPS代理存在且online_ok=true。本地profiles list读取2个profile，default组合列表为空；没有在真实非空组合上验收实时估值。Qt在受限Codex沙箱内仍可能报neon处理器特性错误，本机host执行正常。
+
+本轮安装的是CLI与调用技能，桌面安装包无需更新；构建产物已同步新脚本。外部MCP server未开放，后续可基于同一契约封装。

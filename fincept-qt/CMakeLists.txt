@@ -369,6 +369,7 @@ add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
 # PortfolioMonitor, UniverseScan, FnoAlgo, Arena, Feeds), which CI runs in
 # .github/workflows/build-cpp.yml. Original tracking item: AUDIT_2026-07-25.md §E.
 option(FINCEPT_BUILD_TESTS "Build the Fincept Terminal test suite" OFF)
+option(FINCEPT_BUILD_CLI "Build the read-only local command-line interface" ON)
 
 # ── Alpha Arena live-mode geofencing ─────────────────────────────────────────
 # Live mode is gated by best-effort locale detection in AlphaArenaScreen.
@@ -4250,6 +4251,10 @@ if(UNIX AND NOT APPLE)
         install(FILES ${_QM_FILES}
             DESTINATION ${CMAKE_INSTALL_DATADIR}/fincept-terminal/translations)
     endif()
+endif()
+
+if(FINCEPT_BUILD_CLI AND FINCEPT_LOCAL_EDITION)
+    add_subdirectory(cli)
 endif()
 
 # ── Test suite (opt-in; see fincept-qt/tests/CMakeLists.txt) ─────────────────

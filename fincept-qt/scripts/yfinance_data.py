@@ -170,6 +170,7 @@ def get_quote(symbol):
             "previous_close": _num(previous_close, d),
             "timestamp": int(datetime.now().timestamp()),
             "exchange": metadata.get("exchangeName", ""),
+            "currency": metadata.get("currency", ""),
         }
     except Exception as e:
         return {"error": str(e), "symbol": symbol}

@@ -265,7 +265,7 @@ void EquityResearchService::load_quote_only(const QString& symbol) {
     }
     run_python("yfinance_data.py", {"quote", symbol}, [this, symbol](bool ok, const QString& out) {
         if (!ok) {
-            emit error_occurred("Quote", "Failed to fetch quote for " + symbol);
+            emit error_occurred("Quote", "Failed to fetch quote for " + symbol + ": " + out.left(500));
             return;
         }
         auto obj = QJsonDocument::fromJson(python::extract_json(out).toUtf8()).object();
@@ -290,7 +290,7 @@ void EquityResearchService::load_info_only(const QString& symbol) {
     }
     run_python("yfinance_data.py", {"info", symbol}, [this, symbol](bool ok, const QString& out) {
         if (!ok) {
-            emit error_occurred("Info", "Failed to fetch info for " + symbol);
+            emit error_occurred("Info", "Failed to fetch info for " + symbol + ": " + out.left(500));
             return;
         }
         auto obj = QJsonDocument::fromJson(python::extract_json(out).toUtf8()).object();
@@ -320,7 +320,8 @@ void EquityResearchService::load_historical_only(const QString& symbol, const QS
     run_python("yfinance_data.py", {"historical_period", symbol, period, "1d"},
                [this, symbol, cache_key](bool ok, const QString& out) {
                    if (!ok) {
-                       emit error_occurred("Historical", "Failed to fetch historical for " + symbol);
+                       emit error_occurred("Historical",
+                                           "Failed to fetch historical for " + symbol + ": " + out.left(500));
                        return;
                    }
                    auto arr = QJsonDocument::fromJson(python::extract_json(out).toUtf8()).array();
@@ -797,6 +798,7 @@ QuoteData EquityResearchService::parse_quote(const QJsonObject& o) const {
     q.price = o["price"].toDouble();
     q.change = o["change"].toDouble();
     q.change_pct = o["change_percent"].toDouble();
+    q.change_available = o.value("change_available").toBool(true);
     q.open = o["open"].toDouble();
     q.high = o["high"].toDouble();
     q.low = o["low"].toDouble();

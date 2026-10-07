@@ -29,6 +29,7 @@ struct QuoteData {
     double volume = 0.0;
     QString exchange;
     qint64 timestamp = 0;
+    bool change_available = true;
 };
 
 // ── Company fundamentals ──────────────────────────────────────────────────────

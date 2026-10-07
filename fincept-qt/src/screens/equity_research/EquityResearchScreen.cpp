@@ -656,6 +656,10 @@ void EquityResearchScreen::update_quote_bar(const services::equity::QuoteData& q
                                .arg(q.change, 0, 'f', 2)
                                .arg(arrow)
                                .arg(qAbs(q.change_pct), 0, 'f', 2));
+    if (!q.change_available) {
+        change_label_->setText(kDash);
+        chg_color = ui::colors::TEXT_SECONDARY();
+    }
     change_label_->setStyleSheet(QString("font-size:13px; font-weight:600; color:%1;").arg(chg_color));
 
     // Format volume: show 1.2B, 450M, 12K instead of raw numbers

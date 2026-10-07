@@ -37,6 +37,8 @@ try:
     _NET_TIMEOUT = float(os.environ.get("FINCEPT_YF_TIMEOUT", "15"))
 except (TypeError, ValueError):
     _NET_TIMEOUT = 15.0
+if not math.isfinite(_NET_TIMEOUT) or _NET_TIMEOUT <= 0:
+    _NET_TIMEOUT = 15.0
 
 
 def _price_digits(value):
@@ -79,7 +81,7 @@ def _num(value, digits=None):
     if value is None:
         return None
     try:
-        if pd.isna(value):
+        if pd.isna(value) or not math.isfinite(float(value)):
             return None
         return _px(value, digits)
     except (TypeError, ValueError):
@@ -103,40 +105,72 @@ def _int(value, default=None):
         return default
 
 
+def _retry_yahoo(request):
+    """Retry one transient transport failure. Never bypass the configured proxy/TLS.
+
+    Provider errors (invalid ticker, rate limits, auth) are not transport errors.
+    The outer PythonRunner still owns the total process budget.
+    """
+    for attempt in range(2):
+        try:
+            return request()
+        except Exception as error:
+            message = str(error).lower()
+            transient = any(token in message for token in (
+                "curl: (7)", "curl: (28)", "curl: (35)", "curl: (52)", "curl: (56)",
+                "tls connect error", "connection reset", "connection timed out", "timed out",
+            ))
+            if attempt or not transient:
+                raise
+
+
+def _history_with_retry(symbol, **kwargs):
+    def request():
+        ticker = yf.Ticker(symbol)
+        history = ticker.history(timeout=_NET_TIMEOUT, raise_errors=True, **kwargs)
+        return ticker, history
+    return _retry_yahoo(request)
+
+
 def get_quote(symbol):
-    """Fetch real-time quote for a single symbol"""
+    """Price quotes depend on chart data, not the optional company-info endpoint."""
     try:
         import io, contextlib
-        ticker = yf.Ticker(symbol)
-        _buf = io.StringIO()
-        with contextlib.redirect_stdout(_buf):
-            info = ticker.info
-            hist = ticker.history(period="1d", timeout=_NET_TIMEOUT)
-
-        if hist.empty:
-            return {"error": "No data available", "symbol": symbol}
-
-        current_price = hist['Close'].iloc[-1]
-        previous_close = info.get('previousClose', current_price)
-        change = current_price - previous_close
-        change_percent = (change / previous_close) * 100 if previous_close else 0
-
+        with contextlib.redirect_stdout(io.StringIO()):
+            ticker, hist = _history_with_retry(symbol, period="5d")
+        valid = hist[hist["Close"].apply(lambda v: _num(v) is not None and float(v) > 0)] if not hist.empty else hist
+        if valid.empty:
+            return {"error": "No valid price data available", "symbol": symbol}
+        row = valid.iloc[-1]
+        current_price = float(row["Close"])
+        # The second-last daily bar is the previous session, rather than
+        # chartPreviousClose (which can refer to the beginning of a 5-day range).
+        previous_close = float(valid["Close"].iloc[-2]) if len(valid) > 1 else None
+        try:
+            metadata = ticker.get_history_metadata() or {}
+        except Exception:
+            metadata = {}  # exchange/name metadata must not discard a valid price
+        if previous_close is None:
+            previous_close = _num(metadata.get("previousClose"))
+        if previous_close is not None and previous_close <= 0:
+            previous_close = None
+        change = current_price - previous_close if previous_close is not None else None
+        change_percent = change / previous_close * 100 if previous_close else None
         d = _price_digits(current_price)
-        quote_data = {
+        return {
             "symbol": symbol,
             "price": _px(current_price, d),
-            "change": _px(change, d),
-            "change_percent": round(float(change_percent), 2),
-            "volume": int(hist['Volume'].iloc[-1]) if not hist['Volume'].empty else None,
-            "high": _px(hist['High'].iloc[-1], d) if not hist['High'].empty else None,
-            "low": _px(hist['Low'].iloc[-1], d) if not hist['Low'].empty else None,
-            "open": _px(hist['Open'].iloc[-1], d) if not hist['Open'].empty else None,
-            "previous_close": _px(previous_close, d),
+            "change": _num(change, d),
+            "change_percent": _num(change_percent, 2),
+            "change_available": change is not None,
+            "volume": _int(row.get("Volume")),
+            "high": _num(row.get("High"), d),
+            "low": _num(row.get("Low"), d),
+            "open": _num(row.get("Open"), d),
+            "previous_close": _num(previous_close, d),
             "timestamp": int(datetime.now().timestamp()),
-            "exchange": info.get('exchange', '')
+            "exchange": metadata.get("exchangeName", ""),
         }
-
-        return quote_data
     except Exception as e:
         return {"error": str(e), "symbol": symbol}
 
@@ -239,8 +273,7 @@ def get_historical_price(symbol, target_date):
 def get_info(symbol):
     """Fetch company info for a symbol"""
     try:
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
+        info = _retry_yahoo(lambda: yf.Ticker(symbol).info)
 
         # Extract comprehensive information - many more fields available from yfinance
         info_data = {
@@ -1084,7 +1117,7 @@ def get_historical_period(symbol, period='6mo', interval='1d'):
         ticker = yf.Ticker(symbol)
         _buf = io.StringIO()
         with contextlib.redirect_stdout(_buf):
-            hist = ticker.history(period=period, interval=interval, timeout=_NET_TIMEOUT)
+            _, hist = _history_with_retry(symbol, period=period, interval=interval)
 
         if hist.empty:
             return []
